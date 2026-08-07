@@ -371,34 +371,43 @@ void loop() {
     return;
   }
   
+  // Tính timeout nhanh dựa trên ngưỡng phát hiện (ngắn hơn PULSE_TIMEOUT_US)
+  // Chỉ cần chờ echo đủ để phát hiện vật trong tầm ngưỡng, không cần chờ tầm tối đa
+  unsigned long scanTimeout1 = (unsigned long)(activeThres1 / SPEED_CONST) + 300;
+  unsigned long scanTimeout2 = (unsigned long)(activeThres2 / SPEED_CONST) + 300;
+
   // 1. QUÉT XE ĐI TỪ TRÁI SANG PHẢI (CB1 -> CB2)
   // Ghi timestamp TRƯỚC khi phát xung để tránh độ trễ của quickPing()
   unsigned long tBefore1 = micros();
-  float d1 = quickPing(trigPin1, echoPin1, PULSE_TIMEOUT_US);
+  float d1 = quickPing(trigPin1, echoPin1, scanTimeout1);
   
   if (d1 < activeThres1) {
-    unsigned long timeS1 = tBefore1; // Dùng thời điểm trước khi ping, chính xác hơn
-    
-    lcd.clear(); lcd.setCursor(0, 0); lcd.print("Dang tinh toan..");
-    lcd.setCursor(0, 1); lcd.print("Xe qua CB1 >>");
+    unsigned long timeS1 = tBefore1;
 
-    unsigned long fastTimeout2 = (unsigned long)(activeThres2 / SPEED_CONST) + 500;
+    // === KHÔNG CẬP NHẬT LCD Ở ĐÂY ===
+    // lcd.clear() + lcd.print() qua I2C mất ~5-15ms => xe đã qua CB2 rồi!
+    // LCD chỉ được cập nhật SAU khi đã ghi nhận cả 2 cảm biến.
+
     unsigned long timeS2 = 0;
     
     while (micros() - timeS1 < TIMEOUT_US) {
-      yield(); 
       if (modeChanged) return; 
 
-      unsigned long tBefore2 = micros(); // Ghi timestamp trước khi ping CB2
-      float d2 = quickPing(trigPin2, echoPin2, fastTimeout2);
+      unsigned long tBefore2 = micros();
+      float d2 = quickPing(trigPin2, echoPin2, scanTimeout2);
       if (d2 < activeThres2) {
-        timeS2 = tBefore2; // Dùng thời điểm trước khi ping
+        timeS2 = tBefore2;
         break; 
       }
     }
     
+    // Cập nhật LCD SAU khi đã đo xong
     if (timeS2 > 0) calculateSpeed(timeS1, timeS2, "Trai -> Phai");
-    else printError("Het thoi gian!", "CB2 khong nhan");
+    else {
+      lcd.clear(); lcd.setCursor(0, 0); lcd.print("Het thoi gian!");
+      lcd.setCursor(0, 1); lcd.print("CB2 khong nhan");
+      Serial.println(">> LOI: CB2 khong nhan");
+    }
     resetSystem(3000); 
     return;
   }
@@ -406,31 +415,34 @@ void loop() {
   // 2. QUÉT XE ĐI TỪ PHẢI SANG TRÁI (CB2 -> CB1)
   // Ghi timestamp TRƯỚC khi phát xung để tránh độ trễ của quickPing()
   unsigned long tBefore2 = micros();
-  float d2 = quickPing(trigPin2, echoPin2, PULSE_TIMEOUT_US);
+  float d2 = quickPing(trigPin2, echoPin2, scanTimeout2);
   
   if (d2 < activeThres2) {
-    unsigned long timeS2 = tBefore2; // Dùng thời điểm trước khi ping, chính xác hơn
-    
-    lcd.clear(); lcd.setCursor(0, 0); lcd.print("Dang tinh toan..");
-    lcd.setCursor(0, 1); lcd.print("<< Xe qua CB2");
+    unsigned long timeS2 = tBefore2;
 
-    unsigned long fastTimeout1 = (unsigned long)(activeThres1 / SPEED_CONST) + 500;
+    // === KHÔNG CẬP NHẬT LCD Ở ĐÂY ===
+    // LCD chỉ được cập nhật SAU khi đã ghi nhận cả 2 cảm biến.
+
     unsigned long timeS1 = 0;
     
     while (micros() - timeS2 < TIMEOUT_US) {
-      yield(); 
       if (modeChanged) return; 
 
-      unsigned long tBeforeCB1 = micros(); // Ghi timestamp trước khi ping CB1
-      float d1 = quickPing(trigPin1, echoPin1, fastTimeout1);
+      unsigned long tBeforeCB1 = micros();
+      float d1 = quickPing(trigPin1, echoPin1, scanTimeout1);
       if (d1 < activeThres1) {
-        timeS1 = tBeforeCB1; // Dùng thời điểm trước khi ping
+        timeS1 = tBeforeCB1;
         break;
       }
     }
     
+    // Cập nhật LCD SAU khi đã đo xong
     if (timeS1 > 0) calculateSpeed(timeS2, timeS1, "Phai -> Trai");
-    else printError("Het thoi gian!", "CB1 khong nhan");
+    else {
+      lcd.clear(); lcd.setCursor(0, 0); lcd.print("Het thoi gian!");
+      lcd.setCursor(0, 1); lcd.print("CB1 khong nhan");
+      Serial.println(">> LOI: CB1 khong nhan");
+    }
     resetSystem(3000);
     return;
   }
