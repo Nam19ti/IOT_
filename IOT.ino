@@ -26,9 +26,12 @@ const int echoPin2 = 19;  // Chân ECHO của cảm biến 2 - CB2 (nhận tín 
 const int START_BUTTON_PIN = 26;  // GPIO 26 - Nút BẮN TỐC ĐỘ   (nhấn để bắt đầu/dừng đo)   | An toàn, đọc trong loop
 
 // =========================================================
-// ĐỊA CHỈ I2C CỦA ESP32 SLAVE NHẬN DỮ LIỆU
+// UART GIAO TIẾP VỚI ESP32 SLAVE
+// TX2 = GPIO 17 (nối vào RX2 của ESP32 Slave)
+// Không cần chân RX trên Master vì chỉ gửi một chiều
 // =========================================================
-const int SLAVE_ESP_ADDR = 0x08;
+#define UART2_TX 17
+#define UART2_RX 16  // Khai báo nhưng không cần nối dây
 
 // =========================================================
 // TÙY CHỈNH KHOẢNG CÁCH TẠI ĐÂY (DỄ DÀNG THAY ĐỔI)
@@ -54,9 +57,10 @@ const unsigned long TIMEOUT_US = 3000000; // Thời gian tối đa chờ xe đi 
 const float SPEED_CONST = 0.017;          // Hệ số tính khoảng cách từ thời gian: dist(cm) = duration(us) * 0.017
 
 // Biến trạng thái hệ thống
-bool isArmed = false;              // true = đang trong chế độ ĐO TỐC ĐỘ, false = đang chờ
-unsigned long lastSerialPrint  = 0; // Thời điểm in Serial lần cuối (ms) - tránh in liên tục
+bool isArmed = false;               // true = đang trong chế độ ĐO TỐC ĐỘ, false = đang chờ
+unsigned long lastSerialPrint   = 0; // Thời điểm in Serial lần cuối (ms) - tránh in liên tục
 unsigned long lastStartBtnPress = 0; // Thời điểm nhấn nút BẮT ĐẦU lần cuối (ms) - chống rung
+unsigned long lastI2CDistSend   = 0; // Thời điểm gửi khoảng cách qua I2C lần cuối (ms)
 
 unsigned long PULSE_TIMEOUT_US; // Thời gian timeout pulseIn (us)
 
@@ -189,6 +193,23 @@ void calibrateBackground() {
   printIdleScreen();
 }
 
+// =========================================================
+// GỬI KHOẢNG CÁCH 2 CẢM BIẾN QUA UART (mỗi 5 giây)
+// Định dạng gói tin: "DIST:CB1=12.3,CB2=14.1\n"
+// Dùng lại giá trị đã đo sẵn trong vòng lặp idle - không tốn thêm thời gian đo
+// =========================================================
+void sendDistanceUART(float d1, float d2) {
+  Serial2.print("DIST:CB1=");
+  Serial2.print(d1 == 999.0 ? "ERR" : String(d1, 1));
+  Serial2.print(",CB2=");
+  Serial2.println(d2 == 999.0 ? "ERR" : String(d2, 1)); // println = gửi + '\n'
+
+  Serial.print(">> UART [DIST]: CB1=");
+  Serial.print(d1 == 999.0 ? "ERR" : String(d1, 1) + "cm");
+  Serial.print(" | CB2=");
+  Serial.println(d2 == 999.0 ? "ERR" : String(d2, 1) + "cm");
+}
+
 void calculateSpeed(unsigned long t_start, unsigned long t_end, String direction) {
   unsigned long timeDiff_us = t_end - t_start;
   float timeDiff_s = timeDiff_us / 1000000.0; 
@@ -201,11 +222,13 @@ void calculateSpeed(unsigned long t_start, unsigned long t_end, String direction
   lcd.setCursor(0, 1); lcd.print("V:"); lcd.print(speed_kmph, 1); lcd.print(" km/h");
   Serial.print(">> KET QUA: "); Serial.print(speed_kmph); Serial.println(" km/h");
   
-  // Gửi dữ liệu vận tốc qua I2C cho ESP32 thứ 2
-  Wire.beginTransmission(SLAVE_ESP_ADDR);
-  Wire.print(speed_kmph, 1);
-  Wire.endTransmission();
-  Serial.println(">> I2C: Da gui toc do den Slave 0x08");
+  // Gui toc do + chieu qua UART cho ESP32 thu 2
+  // Dinh dang: "SPEED:25.3,DIR:Trai->Phai\n"
+  Serial2.print("SPEED:");
+  Serial2.print(speed_kmph, 1);
+  Serial2.print(",DIR:");
+  Serial2.println(direction); // println tu them '\n'
+  Serial.println(">> UART: Da gui SPEED=" + String(speed_kmph,1) + " DIR=" + direction);
 
   waitMillis(3000); // Cho người dùng đọc kết quả trước khi tiếp tục
 }
@@ -235,6 +258,10 @@ void resetSystem(unsigned long waitTimeMs = 2500) {
 
 void setup() {
   Serial.begin(115200); // Khởi tạo Serial Monitor ở baudrate 115200
+
+  // Khởi tạo UART2 để giao tiếp với ESP32 Slave
+  // TX2 = GPIO 17, RX2 = GPIO 16 (chỉ dùng TX, không cần nối RX)
+  Serial2.begin(115200, SERIAL_8N1, UART2_RX, UART2_TX);
 
   // Khởi tạo LCD và hiển thị màn hình chào
   lcd.init();
@@ -309,6 +336,13 @@ void loop() {
       else                   { Serial.print(d2_idle); Serial.print("cm (nen="); Serial.print(dynamicBg2, 1); Serial.println(")"); }
 
       lastSerialPrint = millis();
+
+      // --- Gửi khoảng cách qua UART mỗi 5 giây ---
+      // Tái sử dụng d1_idle/d2_idle đã đo ở trên, không cần đo thêm
+      if (millis() - lastI2CDistSend >= 5000) {
+        sendDistanceUART(d1_idle, d2_idle);
+        lastI2CDistSend = millis();
+      }
     }
 
     if (isBtnPressed) {
