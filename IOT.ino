@@ -1,5 +1,19 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+// =========================================================
+// KHỞI TẠO WIFI VÀ THINGSBOARD (MQTT)
+// =========================================================
+const char* WIFI_SSID     = "Dar";
+const char* WIFI_PASSWORD = "12345678";
+const char* MQTT_SERVER   = "demo.thingsboard.io";
+const int   MQTT_PORT     = 1883;
+const char* TOKEN         = "GkUmbnN2vDPBljtNCKfo";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
 
 // =========================================================
 // KHỞI TẠO MÀN HÌNH LCD (địa chỉ I2C: 0x27, kích thước: 16 cột x 2 hàng)
@@ -32,20 +46,16 @@ const int START_BUTTON_PIN = 26;  // GPIO 26 - Nút BẮN TỐC ĐỘ   (nhấn 
 // =========================================================
 
 // 1. KHOẢNG CÁCH GIỮA 2 CẢM BIẾN (Dùng để tính tốc độ)
-// Đơn vị: Mét (m). Ví dụ: 10cm = 0.100, 20cm = 0.200, 1 mét = 1.000
-const float SENSOR_DISTANCE_M = 0.100;
+// Đơn vị: Mét (m). Ví dụ: 10.5cm = 0.105
+const float SENSOR_DISTANCE_M = 0.105;
 
-// 2. KHOẢNG CÁCH QUÉT TỐI ĐA CỦA 3 CHẾ ĐỘ
-// Đơn vị: Centimet (cm).
-const float MODE_1_MAX_CM = 200.0; // Chế độ 1: Nhìn xa tối đa 2 mét  (200cm) - Dùng cho xe chạy nhanh
-const float MODE_2_MAX_CM = 100.0; // Chế độ 2: Nhìn xa tối đa 1 mét  (100cm) - Dùng cho xe chạy vừa
-const float MODE_3_MAX_CM = 15.0;  // Chế độ 3: Nhìn xa tối đa 15 cm          - Dùng cho vật chạy gần
+// 2. KHOẢNG CÁCH QUÉT TỐI ĐA (Duy nhất 1 chế độ)
+// Siêu chuẩn, không nhiễu - Đo xe < 80 km/h
+const float MAX_DISTANCE_CM = 15.0;
 
-// 3. ĐỘ NHẠY CẮT NỀN (Background Offset) - ĐặT THEO TỮNG CHẾ ĐỘ
+// 3. ĐỘ NHẠY CẮT NỀN (Background Offset)
 // Khi vật cản làm khoảng cách giảm nhiều hơn giá trị này so với nền -> nhận là xe
-const float MODE_1_OFFSET_CM = 6.0; // Chế độ 1: phát hiện khi khoảng cách giảm >= 6cm
-const float MODE_2_OFFSET_CM = 4.0; // Chế độ 2: phát hiện khi khoảng cách giảm >= 4cm
-const float MODE_3_OFFSET_CM = 2.0; // Chế độ 3: phát hiện khi khoảng cách giảm >= 2cm
+const float OFFSET_CM = 2.0;
 
 // =========================================================
 // HẾT PHẦN TÙY CHỈNH - LOGIC HỆ THỐNG BÊN DƯỚI
@@ -54,22 +64,17 @@ const float MODE_3_OFFSET_CM = 2.0; // Chế độ 3: phát hiện khi khoảng 
 const unsigned long TIMEOUT_US = 3000000; // Thời gian tối đa chờ xe đi qua cảm biến thứ 2: 3 giây
 const float SPEED_CONST = 0.017;          // Hệ số tính khoảng cách từ thời gian: dist(cm) = duration(us) * 0.017
 
-// Biến trạng thái của nút CHUYỂN CHẾ ĐỘ (dùng trong ngắt ISR nên phải là volatile)
-volatile int  currentMode    = 3;    // Chế độ hiện tại (1, 2 hoặc 3)
-volatile bool modeChanged    = false; // Cờ báo chế độ vừa được thay đổi
-volatile unsigned long lastModePress = 0; // Thời điểm nhấn nút MODE lần cuối (ms) - chống rung
-
 // Biến trạng thái hệ thống
 bool isArmed = false;              // true = đang trong chế độ ĐO TỐC ĐỘ, false = đang chờ
 unsigned long lastSerialPrint  = 0; // Thời điểm in Serial lần cuối (ms) - tránh in liên tục
 unsigned long lastStartBtnPress = 0; // Thời điểm nhấn nút BẮT ĐẦU lần cuối (ms) - chống rung
 
-unsigned long PULSE_TIMEOUT_US; // Thời gian timeout pulseIn (us), tự động tính theo chế độ
+unsigned long PULSE_TIMEOUT_US; // Thời gian timeout pulseIn (us)
 
 float activeThres1   = 0;  // Ngưỡng phát hiện xe CB1 = dynamicBg1 - currentOffset
 float activeThres2   = 0;  // Ngưỡng phát hiện xe CB2 = dynamicBg2 - currentOffset
-float currentMaxDist = 0;  // Khoảng cách quét tối đa của chế độ hiện tại (cm)
-float currentOffset  = 2.0; // Offset ngưỡng của chế độ hiện tại (tự động cập nhật theo mode)
+float currentMaxDist = MAX_DISTANCE_CM;  
+float currentOffset  = OFFSET_CM;
 
 // =========================================================
 // NỀN ĐỘNG (DYNAMIC BACKGROUND)
@@ -95,19 +100,6 @@ void waitMillis(unsigned long ms) {
 void waitMicros(unsigned long us) {
   unsigned long start = micros();
   while (micros() - start < us);
-}
-
-// Hàm ngắt ISR cho nút CHUYỂN CHẾ ĐỘ (GPIO 25)
-// Được gọi tự động khi GPIO 25 có xung FALLING (nhấn nút)
-// IRAM_ATTR: bắt buộc để ISR chạy trong RAM, không bị gián đoạn
-void IRAM_ATTR modeISR() {
-  unsigned long currentTime = millis();
-  if (currentTime - lastModePress > 300) { // Chống rung nút: bỏ qua nếu nhấn quá nhanh (< 300ms)
-    currentMode++;                          // Tăng chế độ lên 1
-    if (currentMode > 3) currentMode = 1;  // Vòng lại từ đầu: Mode 3 -> Mode 1
-    modeChanged = true;                    // Đặt cờ để loop() xử lý
-    lastModePress = currentTime;           // Ghi lại thời điểm nhấn
-  }
 }
 
 // =========================================================
@@ -174,51 +166,84 @@ float getMedianPing(int trig, int echo, int samples = 3, unsigned long customTim
 void printIdleScreen() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Mode:"); lcd.print(currentMode);
-  lcd.print(" T1:"); lcd.print((int)activeThres1);
+  lcd.print("He thong SS! T1:");
+  lcd.print((int)activeThres1);
   lcd.setCursor(0, 1);
-  lcd.print("Bam N26 de DO"); // Nút GPIO 26 = nút bắn tốc độ
-  lcd.setCursor(12, 1);
-  lcd.print("T2:"); lcd.print((int)activeThres2);
+  lcd.print("Bam nut de doT2:"); 
+  lcd.print((int)activeThres2);
 }
 
-void applyMode(int mode) {
-  switch(mode) {
-    case 1: currentMaxDist = MODE_1_MAX_CM; currentOffset = MODE_1_OFFSET_CM; break;
-    case 2: currentMaxDist = MODE_2_MAX_CM; currentOffset = MODE_2_OFFSET_CM; break;
-    case 3: currentMaxDist = MODE_3_MAX_CM; currentOffset = MODE_3_OFFSET_CM; break;
-  }
-  
-  // Tự động tính thời gian ép xung siêu âm dựa trên cấu hình khoảng cách
+void calibrateBackground() {
   PULSE_TIMEOUT_US = (unsigned long)(currentMaxDist / SPEED_CONST) + 2000;
   
-  lcd.clear(); lcd.setCursor(0, 0); lcd.print("Mode "); lcd.print(mode); lcd.print(" setup..");
+  lcd.clear(); lcd.setCursor(0, 0); lcd.print("He thong setup..");
   lcd.setCursor(0, 1); lcd.print("Dang do nen...");
   
-  Serial.print("\n=== AUTO LAY NEN MODE "); Serial.print(mode); Serial.println(" ===");
+  Serial.print("\n=== AUTO LAY NEN ===");
   
   float bg1 = getMedianPing(trigPin1, echoPin1, 5, 25000);
   float bg2 = getMedianPing(trigPin2, echoPin2, 5, 25000);
 
-  // Khởi tạo nền động từ giá trị đo ban đầu
   if (bg1 != 999.0) dynamicBg1 = bg1;
-  else              dynamicBg1 = currentMaxDist; // Không đo được -> giả sử nền = tầm tối đa
+  else              dynamicBg1 = currentMaxDist;
 
   if (bg2 != 999.0) dynamicBg2 = bg2;
   else              dynamicBg2 = currentMaxDist;
 
-  // Tính ngưỡng phát hiện xe từ nền động và offset của chế độ hiện tại
   activeThres1 = min(dynamicBg1 - currentOffset, currentMaxDist);
   activeThres2 = min(dynamicBg2 - currentOffset, currentMaxDist);
-  if (activeThres1 < 3.0) activeThres1 = 3.0; // Tối thiểu 3cm để tránh false positive
+  if (activeThres1 < 3.0) activeThres1 = 3.0;
   if (activeThres2 < 3.0) activeThres2 = 3.0;
 
-  Serial.print("  -> Offset mode "); Serial.print(mode); Serial.print(": "); Serial.print(currentOffset); Serial.println(" cm");
-  Serial.print("  -> Nen CB1: "); Serial.print(dynamicBg1); Serial.print(" cm | Nguong: "); Serial.println(activeThres1);
-  Serial.print("  -> Nen CB2: "); Serial.print(dynamicBg2); Serial.print(" cm | Nguong: "); Serial.println(activeThres2);
-
+  Serial.println(" -> OK!");
   waitMillis(800);
   printIdleScreen();
+}
+
+void sendTelemetryMQTT(float speed_kmph, String direction) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println(">> MQTT: Khong co WiFi, bo qua gui.");
+    return;
+  }
+  
+  lcd.clear(); lcd.setCursor(0, 0); lcd.print("Dang gui MQTT...");
+  Serial.print(">> MQTT: Ket noi den ThingsBoard... ");
+  
+  unsigned long startConnect = millis();
+  // Thử kết nối MQTT (chờ tối đa 2 giây để không làm treo máy lâu)
+  while (!client.connected() && (millis() - startConnect < 2000)) {
+    if (client.connect("ESP32_Speed_Client", TOKEN, NULL)) {
+      Serial.println("OK");
+    } else {
+      waitMillis(500);
+    }
+  }
+
+  if (client.connected()) {
+    // Đóng gói JSON
+    String payload = "{\"speed\":";
+    payload += speed_kmph;
+    payload += ", \"direction\":\"";
+    payload += direction;
+    payload += "\"}";
+    
+    // Gửi dữ liệu
+    if (client.publish("v1/devices/me/telemetry", payload.c_str())) {
+      Serial.println(">> MQTT: Da gui " + payload);
+      lcd.setCursor(0, 1); lcd.print("Gui THANH CONG!");
+    } else {
+      Serial.println(">> MQTT: Loi khi gui.");
+      lcd.setCursor(0, 1); lcd.print("Gui THAT BAI!");
+    }
+    
+    // Đọc data dọn bộ đệm MQTT một lần rồi ngắt
+    client.loop(); 
+    waitMillis(1000); // Hiện chữ thông báo 1s
+  } else {
+    Serial.println("THAT BAI (Timeout).");
+    lcd.setCursor(0, 1); lcd.print("Loi ket noi MQTT");
+    waitMillis(1000);
+  }
 }
 
 void calculateSpeed(unsigned long t_start, unsigned long t_end, String direction) {
@@ -232,6 +257,9 @@ void calculateSpeed(unsigned long t_start, unsigned long t_end, String direction
   lcd.clear(); lcd.setCursor(0, 0); lcd.print(direction); 
   lcd.setCursor(0, 1); lcd.print("V:"); lcd.print(speed_kmph, 1); lcd.print(" km/h");
   Serial.print(">> KET QUA: "); Serial.print(speed_kmph); Serial.println(" km/h");
+  
+  waitMillis(2000); // Cho người dùng đọc kết quả trước
+  sendTelemetryMQTT(speed_kmph, direction);
 }
 
 void printError(String dong1, String dong2) {
@@ -245,8 +273,6 @@ void resetSystem(unsigned long waitTimeMs = 2500) {
   unsigned long startWait = millis();
   
   while (millis() - startWait < waitTimeMs) {
-    if (modeChanged) return; 
-    
     if (digitalRead(START_BUTTON_PIN) == LOW) {
       lastStartBtnPress = millis(); 
       while (digitalRead(START_BUTTON_PIN) == LOW) yield(); 
@@ -270,13 +296,11 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("Toc Do - ESP32");
 
-  waitMillis(2000); // Giữ màn hình chào 2 giây
+  // Kết nối WiFi chạy nền (không block)
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  client.setServer(MQTT_SERVER, MQTT_PORT);
 
-  // Cấu hình nút CHUYỂN CHẾ ĐỘ (GPIO 25) - dùng điện trở nội PULL-UP
-  // => Nút nối GND: khi nhấn = LOW, khi thả = HIGH
-  // Gắn ngắt ISR: modeISR() tự động chạy khi phát hiện cạnh xuống (FALLING)
-  pinMode(MODE_BUTTON_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(MODE_BUTTON_PIN), modeISR, FALLING);
+  waitMillis(2000); // Giữ màn hình chào 2 giây
 
   // Cấu hình nút BẮN TỐC ĐỘ (GPIO 26) - dùng điện trở nội PULL-UP
   // Nút nối GND: khi nhấn = LOW, khi thả = HIGH (đọc thủ công trong loop)
@@ -288,17 +312,11 @@ void setup() {
   pinMode(trigPin2, OUTPUT); // TRIG CB2: phát xung (OUTPUT)
   pinMode(echoPin2, INPUT);  // ECHO CB2: nhận tín hiệu (INPUT)
 
-  // Áp dụng chế độ mặc định và lấy nền lần đầu
-  applyMode(currentMode);
+  // Lấy nền lần đầu
+  calibrateBackground();
 }
 
 void loop() {
-  if (modeChanged) {
-    applyMode(currentMode);
-    isArmed = false; 
-    modeChanged = false;
-  }
-
   bool currentBtnState = digitalRead(START_BUTTON_PIN);
   static bool lastBtnState = HIGH;
   bool isBtnPressed = false;
@@ -371,30 +389,40 @@ void loop() {
     return;
   }
   
-  // Tính timeout nhanh dựa trên ngưỡng phát hiện (ngắn hơn PULSE_TIMEOUT_US)
-  // Chỉ cần chờ echo đủ để phát hiện vật trong tầm ngưỡng, không cần chờ tầm tối đa
-  unsigned long scanTimeout1 = (unsigned long)(activeThres1 / SPEED_CONST) + 300;
-  unsigned long scanTimeout2 = (unsigned long)(activeThres2 / SPEED_CONST) + 300;
+  // =========================================================
+  // TIMEOUT CHO VÒNG LẶP QUÉT BAN ĐẦU:
+  //   Dùng PULSE_TIMEOUT_US (đã tính đủ cho tầm tối đa + buffer 2000us)
+  //   KHÔNG dùng timeout ngắn hơn ở đây vì HC-SR04 cần ~600us xử lý nội bộ
+  //   trước khi ECHO lên HIGH. Timeout quá ngắn = cắt echo giữa chừng = miss xe!
+  //
+  // TIMEOUT CHO VÒNG LẶP CHỜ CẢM BIẾN THỨ 2 (sau khi đã bắt được cảm biến 1):
+  //   = thời gian echo tại ngưỡng + 900us (600us sensor delay + 300us buffer)
+  //   Ngắn hơn PULSE_TIMEOUT_US giúp poll CB thứ 2 nhanh hơn, ít miss hơn.
+  // =========================================================
+  unsigned long waitTimeout1 = (unsigned long)(activeThres1 / SPEED_CONST) + 900;
+  unsigned long waitTimeout2 = (unsigned long)(activeThres2 / SPEED_CONST) + 900;
 
   // 1. QUÉT XE ĐI TỪ TRÁI SANG PHẢI (CB1 -> CB2)
   // Ghi timestamp TRƯỚC khi phát xung để tránh độ trễ của quickPing()
   unsigned long tBefore1 = micros();
-  float d1 = quickPing(trigPin1, echoPin1, scanTimeout1);
+  float d1 = quickPing(trigPin1, echoPin1, PULSE_TIMEOUT_US); // PULSE_TIMEOUT_US: an toàn cho mọi mode
   
   if (d1 < activeThres1) {
     unsigned long timeS1 = tBefore1;
-
-    // === KHÔNG CẬP NHẬT LCD Ở ĐÂY ===
-    // lcd.clear() + lcd.print() qua I2C mất ~5-15ms => xe đã qua CB2 rồi!
-    // LCD chỉ được cập nhật SAU khi đã ghi nhận cả 2 cảm biến.
-
     unsigned long timeS2 = 0;
+
+    // === TỐI ƯU HÓA KHẮC PHỤC SAI SỐ TẦN SỐ QUÉT ===
+    // CB1 đã thấy xe ở khoảng cách d1. Mặc định CB2 phải quét ra tận background.
+    // Giờ ta ép CB2 chỉ quét tới độ sâu của d1 (cộng thêm 25cm bù trừ xe đi chéo).
+    // Giúp Mode 1 và 2 chớp mắt nhanh y hệt như Mode 3!
+    unsigned long fastPoll2 = (unsigned long)((d1 + 25.0) / SPEED_CONST) + 900;
+    unsigned long currentWait2 = min(waitTimeout2, fastPoll2);
     
     while (micros() - timeS1 < TIMEOUT_US) {
-      if (modeChanged) return; 
+      yield(); // Bắt buộc! Không có yield() -> WDT reset ESP32 sau ~3 giây
 
       unsigned long tBefore2 = micros();
-      float d2 = quickPing(trigPin2, echoPin2, scanTimeout2);
+      float d2 = quickPing(trigPin2, echoPin2, currentWait2); // Quét siêu tốc
       if (d2 < activeThres2) {
         timeS2 = tBefore2;
         break; 
@@ -415,21 +443,21 @@ void loop() {
   // 2. QUÉT XE ĐI TỪ PHẢI SANG TRÁI (CB2 -> CB1)
   // Ghi timestamp TRƯỚC khi phát xung để tránh độ trễ của quickPing()
   unsigned long tBefore2 = micros();
-  float d2 = quickPing(trigPin2, echoPin2, scanTimeout2);
+  float d2 = quickPing(trigPin2, echoPin2, PULSE_TIMEOUT_US); // PULSE_TIMEOUT_US: an toàn cho mọi mode
   
   if (d2 < activeThres2) {
     unsigned long timeS2 = tBefore2;
-
-    // === KHÔNG CẬP NHẬT LCD Ở ĐÂY ===
-    // LCD chỉ được cập nhật SAU khi đã ghi nhận cả 2 cảm biến.
-
     unsigned long timeS1 = 0;
+
+    // === TỐI ƯU HÓA KHẮC PHỤC SAI SỐ TẦN SỐ QUÉT ===
+    unsigned long fastPoll1 = (unsigned long)((d2 + 25.0) / SPEED_CONST) + 900;
+    unsigned long currentWait1 = min(waitTimeout1, fastPoll1);
     
     while (micros() - timeS2 < TIMEOUT_US) {
-      if (modeChanged) return; 
+      yield(); // Bắt buộc! Không có yield() -> WDT reset ESP32 sau ~3 giây
 
       unsigned long tBeforeCB1 = micros();
-      float d1 = quickPing(trigPin1, echoPin1, scanTimeout1);
+      float d1 = quickPing(trigPin1, echoPin1, currentWait1); // Quét siêu tốc
       if (d1 < activeThres1) {
         timeS1 = tBeforeCB1;
         break;
