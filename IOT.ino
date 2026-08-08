@@ -1,20 +1,5 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <WiFi.h>
-#include <PubSubClient.h>
-
-// =========================================================
-// KHỞI TẠO WIFI VÀ THINGSBOARD (MQTT)
-// =========================================================
-const char* WIFI_SSID     = "Dar";
-const char* WIFI_PASSWORD = "12345678";
-const char* MQTT_SERVER   = "demo.thingsboard.io";
-const int   MQTT_PORT     = 1883;
-const char* TOKEN         = "GkUmbnN2vDPBljtNCKfo";
-
-WiFiClient espClient;
-PubSubClient client(espClient);
-
 // =========================================================
 // KHỞI TẠO MÀN HÌNH LCD (địa chỉ I2C: 0x27, kích thước: 16 cột x 2 hàng)
 // =========================================================
@@ -38,8 +23,12 @@ const int echoPin2 = 19;  // Chân ECHO của cảm biến 2 - CB2 (nhận tín 
 //   - GPIO 12,13,14,15 : JTAG pins   -> có thể nhiễu trên một số board
 //   - GPIO 34,35,36,39 : Chỉ INPUT  -> không dùng được cho interrupt
 // CHÂN AN TOÀN: 25, 26, 27, 32, 33 (đa năng, interrupt, không xung đột)
-const int MODE_BUTTON_PIN  = 25;  // GPIO 25 - Nút CHUYỂN CHẾ ĐỘ (nhấn để đổi Mode 1/2/3) | An toàn, hỗ trợ interrupt
 const int START_BUTTON_PIN = 26;  // GPIO 26 - Nút BẮN TỐC ĐỘ   (nhấn để bắt đầu/dừng đo)   | An toàn, đọc trong loop
+
+// =========================================================
+// ĐỊA CHỈ I2C CỦA ESP32 SLAVE NHẬN DỮ LIỆU
+// =========================================================
+const int SLAVE_ESP_ADDR = 0x08;
 
 // =========================================================
 // TÙY CHỈNH KHOẢNG CÁCH TẠI ĐÂY (DỄ DÀNG THAY ĐỔI)
@@ -200,52 +189,6 @@ void calibrateBackground() {
   printIdleScreen();
 }
 
-void sendTelemetryMQTT(float speed_kmph, String direction) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println(">> MQTT: Khong co WiFi, bo qua gui.");
-    return;
-  }
-  
-  lcd.clear(); lcd.setCursor(0, 0); lcd.print("Dang gui MQTT...");
-  Serial.print(">> MQTT: Ket noi den ThingsBoard... ");
-  
-  unsigned long startConnect = millis();
-  // Thử kết nối MQTT (chờ tối đa 2 giây để không làm treo máy lâu)
-  while (!client.connected() && (millis() - startConnect < 2000)) {
-    if (client.connect("ESP32_Speed_Client", TOKEN, NULL)) {
-      Serial.println("OK");
-    } else {
-      waitMillis(500);
-    }
-  }
-
-  if (client.connected()) {
-    // Đóng gói JSON
-    String payload = "{\"speed\":";
-    payload += speed_kmph;
-    payload += ", \"direction\":\"";
-    payload += direction;
-    payload += "\"}";
-    
-    // Gửi dữ liệu
-    if (client.publish("v1/devices/me/telemetry", payload.c_str())) {
-      Serial.println(">> MQTT: Da gui " + payload);
-      lcd.setCursor(0, 1); lcd.print("Gui THANH CONG!");
-    } else {
-      Serial.println(">> MQTT: Loi khi gui.");
-      lcd.setCursor(0, 1); lcd.print("Gui THAT BAI!");
-    }
-    
-    // Đọc data dọn bộ đệm MQTT một lần rồi ngắt
-    client.loop(); 
-    waitMillis(1000); // Hiện chữ thông báo 1s
-  } else {
-    Serial.println("THAT BAI (Timeout).");
-    lcd.setCursor(0, 1); lcd.print("Loi ket noi MQTT");
-    waitMillis(1000);
-  }
-}
-
 void calculateSpeed(unsigned long t_start, unsigned long t_end, String direction) {
   unsigned long timeDiff_us = t_end - t_start;
   float timeDiff_s = timeDiff_us / 1000000.0; 
@@ -258,8 +201,13 @@ void calculateSpeed(unsigned long t_start, unsigned long t_end, String direction
   lcd.setCursor(0, 1); lcd.print("V:"); lcd.print(speed_kmph, 1); lcd.print(" km/h");
   Serial.print(">> KET QUA: "); Serial.print(speed_kmph); Serial.println(" km/h");
   
-  waitMillis(2000); // Cho người dùng đọc kết quả trước
-  sendTelemetryMQTT(speed_kmph, direction);
+  // Gửi dữ liệu vận tốc qua I2C cho ESP32 thứ 2
+  Wire.beginTransmission(SLAVE_ESP_ADDR);
+  Wire.print(speed_kmph, 1);
+  Wire.endTransmission();
+  Serial.println(">> I2C: Da gui toc do den Slave 0x08");
+
+  waitMillis(3000); // Cho người dùng đọc kết quả trước khi tiếp tục
 }
 
 void printError(String dong1, String dong2) {
@@ -295,10 +243,6 @@ void setup() {
   lcd.print("He Thong Do");
   lcd.setCursor(0, 1);
   lcd.print("Toc Do - ESP32");
-
-  // Kết nối WiFi chạy nền (không block)
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  client.setServer(MQTT_SERVER, MQTT_PORT);
 
   waitMillis(2000); // Giữ màn hình chào 2 giây
 
