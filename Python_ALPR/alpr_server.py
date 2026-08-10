@@ -3,121 +3,112 @@ import numpy as np
 import easyocr
 import json
 import paho.mqtt.client as mqtt
+import requests
+import time
+import os
+import datetime
 
 # =========================================================
-# CẤU HÌNH MQTT
+# 1. CẤU HÌNH CAMERA ĐIỆN THOẠI (SMARTPHONE)
 # =========================================================
-# 1. HiveMQ (Dùng để nhận dữ liệu nội bộ siêu tốc từ 2 con ESP32)
+USE_USB_WEBCAM = False 
+IP_WEBCAM_URL = "http://192.168.42.129:8080/photo.jpg" 
+USB_CAM_INDEX = 1 
+
+# =========================================================
+# 2. CẤU HÌNH MQTT (HIVEMQ)
+# =========================================================
 HIVEMQ_BROKER = "broker.hivemq.com"
 HIVEMQ_PORT = 1883
 
-# 2. ThingsBoard (Dùng để báo cáo kết quả cuối cùng lên Web)
-TB_BROKER = "mqtt.thingsboard.cloud"
-TB_PORT = 1883
-TB_TOKEN = "TOKEN_CUA_ESP32_SLAVE" # ĐIỀN TOKEN CỦA BẠN VÀO ĐÂY
-
 # =========================================================
-# KHỞI TẠO CÁC MODULE VÀ BIẾN TOÀN CỤC
+# KHỞI TẠO CÁC MODULE
 # =========================================================
 print("Đang tải mô hình nhận diện chữ (EasyOCR)... Vui lòng đợi...")
 reader = easyocr.Reader(['en'], gpu=False) 
 print("Tải xong mô hình!")
 
-# Cuốn sổ ghi chép tốc độ tạm thời của từng xe (Chống nhầm lẫn Session ID)
-# Định dạng: { "1": {"speed": 25.3, "dir": "Trai->Phai"}, "2": {...} }
-cars_db = {}
-
-# Khởi tạo 2 MQTT Client riêng biệt
 hive_client = mqtt.Client(client_id="Python_AI_Core_" + str(np.random.randint(1000)))
-tb_client = mqtt.Client(client_id="TB_Publisher_" + str(np.random.randint(1000)))
-tb_client.username_pw_set(TB_TOKEN)
 
-# =========================================================
-# XỬ LÝ KHI NHẬN ĐƯỢC TIN NHẮN TỪ HIVEMQ
-# =========================================================
+usb_cap = None
+if USE_USB_WEBCAM:
+    print(f"Đang kết nối với USB Webcam số {USB_CAM_INDEX}...")
+    usb_cap = cv2.VideoCapture(USB_CAM_INDEX)
+    usb_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) 
+    if not usb_cap.isOpened():
+        print("!!! Lỗi: Không thể mở USB Webcam!")
+    else:
+        print("Kết nối USB Webcam thành công!")
+
+def capture_image():
+    if USE_USB_WEBCAM and usb_cap is not None:
+        usb_cap.read()
+        usb_cap.read()
+        ret, frame = usb_cap.read()
+        if ret:
+            return frame
+        else:
+            raise Exception("Webcam mất kết nối")
+    else:
+        res = requests.get(IP_WEBCAM_URL, timeout=3)
+        if res.status_code == 200:
+            nparr = np.frombuffer(res.content, np.uint8)
+            return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        else:
+            raise Exception(f"HTTP Status {res.status_code}")
+
 def on_hive_message(client, userdata, msg):
-    topic = msg.topic
-    
-    # 1. NẾU NHẬN ĐƯỢC TỐC ĐỘ TỪ SLAVE
-    if topic == "iot_thanglong/speed":
+    if msg.topic == "iot_thanglong/speed":
         try:
             data = json.loads(msg.payload.decode('utf-8'))
             car_id = str(data["id"])
-            cars_db[car_id] = {
-                "speed": data["speed"],
-                "direction": data["direction"]
-            }
-            print(f"\n[+] Đã ghi sổ TỐC ĐỘ của Xe ID {car_id}: {data['speed']} km/h")
-        except Exception as e:
-            print("Lỗi đọc JSON tốc độ:", e)
-
-    # 2. NẾU NHẬN ĐƯỢC ẢNH TỪ CAM
-    elif topic.startswith("iot_thanglong/image/"):
-        car_id = topic.split("/")[-1]
-        print(f"\n[+] Đã nhận ẢNH của Xe ID {car_id}. Đang chạy AI...")
-        
-        try:
-            # Chuyển đổi mảng byte thành ảnh OpenCV
-            nparr = np.frombuffer(msg.payload, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            cv2.imwrite(f"capture_xe_{car_id}.jpg", img) # Lưu ra file để kiểm tra
-
-            # Nhận diện
-            results = reader.readtext(img)
-            plate_text = ""
-            for (bbox, text, prob) in results:
-                clean_text = ''.join(e for e in text if e.isalnum()).upper()
-                if len(clean_text) >= 4:
-                    plate_text += clean_text + "-"
+            speed = data["speed"]
+            direction = data["direction"]
             
-            plate_text = plate_text.rstrip("-")
-            if not plate_text:
-                plate_text = "Khong Thay Bien"
+            print(f"\n[+] Đã nhận TỐC ĐỘ Xe {car_id}: {speed} km/h. Bắt đầu chụp ảnh...")
+            
+            try:
+                img = capture_image()
+                print(f"    -> Đã lấy được ảnh nét! Đang chạy AI...")
                 
-            print(f"> Kết quả AI Xe {car_id}: [{plate_text}]")
-
-            # Ghép với tốc độ trong sổ và gửi lên ThingsBoard
-            if car_id in cars_db:
-                car_info = cars_db.pop(car_id) # Lấy ra và xóa khỏi sổ
+                results = reader.readtext(img)
+                plate_text = ""
+                for (bbox, text, prob) in results:
+                    clean_text = ''.join(e for e in text if e.isalnum()).upper()
+                    if len(clean_text) >= 4:
+                        plate_text += clean_text + "-"
                 
+                plate_text = plate_text.rstrip("-")
+                if not plate_text:
+                    plate_text = "Khong Thay Bien"
+                    
+                print(f"> Kết quả AI Xe {car_id}: [{plate_text}]")
+                
+                # Gửi trả KẾT QUẢ TỔNG HỢP về lại Slave thông qua HiveMQ
                 payload = {
-                    "speed": car_info["speed"],
-                    "direction": car_info["direction"],
-                    "license_plate": plate_text
+                    "id": car_id,
+                    "speed": speed,
+                    "direction": direction,
+                    "plate": plate_text
                 }
                 
-                # Bắn lên ThingsBoard
-                tb_client.publish("v1/devices/me/telemetry", json.dumps(payload))
-                print(f">>> ĐÃ GỬI LÊN THINGSBOARD: {payload}")
-            else:
-                print(f"!!! Lỗi: Nhận được ảnh Xe {car_id} nhưng không tìm thấy tốc độ trong sổ!")
+                hive_client.publish("iot_thanglong/plate", json.dumps(payload))
+                print(f">>> Đã đẩy trả toàn bộ kết quả về ESP32 Slave: {payload}")
+                
+            except Exception as cam_err:
+                print("!!! Lỗi Camera:", cam_err)
+                payload = {"id": car_id, "speed": speed, "direction": direction, "plate": "Loi Camera"}
+                hive_client.publish("iot_thanglong/plate", json.dumps(payload))
                 
         except Exception as e:
-            print(f"Lỗi xử lý ảnh xe {car_id}:", e)
+            print("Lỗi MQTT:", e)
 
-# =========================================================
-# HÀM MAIN CHẠY SERVER
-# =========================================================
 def main():
-    # Kết nối ThingsBoard
-    try:
-        tb_client.connect(TB_BROKER, TB_PORT, 60)
-        tb_client.loop_start()
-        print("- Đã kết nối ThingsBoard.")
-    except Exception as e:
-        print("Lỗi kết nối ThingsBoard:", e)
-
-    # Kết nối HiveMQ và Subscribe
     try:
         hive_client.on_message = on_hive_message
         hive_client.connect(HIVEMQ_BROKER, HIVEMQ_PORT, 60)
-        
         hive_client.subscribe("iot_thanglong/speed")
-        hive_client.subscribe("iot_thanglong/image/#") # Dấu # để bắt mọi ID
-        
-        print("- Đã kết nối HiveMQ và đang trực ban lắng nghe MQTT...")
-        
-        # Vòng lặp duy trì kết nối
+        print("- Đã kết nối HiveMQ và đang trực ban lắng nghe tốc độ...")
         hive_client.loop_forever()
     except Exception as e:
         print("Lỗi kết nối HiveMQ:", e)

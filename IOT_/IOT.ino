@@ -32,7 +32,7 @@ const int TRIGGER_CAM_PIN = 27;   // GPIO 27 - Kích hoạt ESP32-CAM chụp ả
 // Không cần chân RX trên Master vì chỉ gửi một chiều
 // =========================================================
 #define UART2_TX 17
-#define UART2_RX 16  // Khai báo nhưng không cần nối dây
+#define UART2_RX 16  // BẮT BUỘC NỐI VÀO CHÂN TX2 (17) CỦA SLAVE ĐỂ NHẬN KẾT QUẢ
 
 // =========================================================
 // TÙY CHỈNH KHOẢNG CÁCH TẠI ĐÂY (DỄ DÀNG THAY ĐỔI)
@@ -265,8 +265,8 @@ void resetSystem(unsigned long waitTimeMs = 2500) {
 void setup() {
   Serial.begin(115200); // Khởi tạo Serial Monitor ở baudrate 115200
 
-  // Khởi tạo UART2 để giao tiếp với ESP32 Slave
-  // TX2 = GPIO 17, RX2 = GPIO 16 (chỉ dùng TX, không cần nối RX)
+  // Khởi tạo UART2 để giao tiếp 2 chiều với ESP32 Slave
+  // TX2 = GPIO 17 (Gửi tốc độ), RX2 = GPIO 16 (Nhận kết quả AI)
   Serial2.begin(115200, SERIAL_8N1, UART2_RX, UART2_TX);
 
   // Khởi tạo LCD và hiển thị màn hình chào
@@ -294,6 +294,9 @@ void setup() {
 }
 
 void loop() {
+  // Lắng nghe dữ liệu biển số từ Slave trả về
+  checkSlaveResult();
+  
   bool currentBtnState = digitalRead(START_BUTTON_PIN);
   static bool lastBtnState = HIGH;
   bool isBtnPressed = false;
@@ -456,5 +459,58 @@ void loop() {
     }
     resetSystem(3000);
     return;
+  }
+}
+
+// =========================================================
+// HÀM ĐỌC DỮ LIỆU TỪ SLAVE TRẢ VỀ (UART) ĐỂ IN LÊN LCD
+// Định dạng: RESULT:ID=1,V=25.3,P=30A-12345\n
+// =========================================================
+void checkSlaveResult() {
+  static char uartBuf[128];
+  static int uartPos = 0;
+
+  while (Serial2.available() > 0) {
+    char c = (char)Serial2.read();
+    if (c == '\n') {
+      uartBuf[uartPos] = '\0';
+      String msg = String(uartBuf);
+      uartPos = 0; // Reset buffer
+      
+      if (msg.startsWith("RESULT:")) {
+        int iV = msg.indexOf(",V=");
+        int iP = msg.indexOf(",P=");
+        if (iV > 0 && iP > iV) {
+          String speed = msg.substring(iV + 3, iP);
+          String plate = msg.substring(iP + 3);
+          
+          // IN RA SERIAL
+          Serial.println("=========================================");
+          Serial.println(">> CÓ KẾT QUẢ AI TỪ SLAVE TRẢ VỀ:");
+          Serial.println("   Vận tốc: " + speed + " km/h");
+          Serial.println("   Biển số: " + plate);
+          Serial.println("=========================================");
+          
+          // IN RA MÀN HÌNH LCD
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Bien:" + plate);
+          lcd.setCursor(0, 1);
+          lcd.print("V:" + speed + " km/h");
+          
+          // Chờ 5 giây để người dùng kịp nhìn biển số
+          unsigned long startWait = millis();
+          while(millis() - startWait < 5000) {
+            yield();
+          }
+          
+          if (!isArmed) {
+            printIdleScreen(); // Khôi phục màn hình chờ
+          }
+        }
+      }
+    } else if (c != '\r') {
+      if (uartPos < 127) uartBuf[uartPos++] = c;
+    }
   }
 }
