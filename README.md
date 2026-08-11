@@ -30,38 +30,38 @@ Hệ thống sử dụng cảm biến siêu âm để đo tốc độ, truyền 
 
 ```mermaid
 graph LR
-    subgraph ESP32_Master
-        ESP32[ESP32 Board - Master]
+    subgraph ESP32_Master["ESP32_Master"]
+        ESP32["ESP32 Board - Master"]
     end
 
-    subgraph Cảm biến
-        CB1[Cảm biến Siêu âm 1<br/>Bên trái]
-        CB2[Cảm biến Siêu âm 2<br/>Bên phải]
+    subgraph CamBien["Cảm biến"]
+        CB1["Cảm biến Siêu âm 1 (Bên trái)"]
+        CB2["Cảm biến Siêu âm 2 (Bên phải)"]
     end
 
-    subgraph Hiển thị & Giao tiếp
-        LCD[Màn hình LCD I2C<br/>16x2]
-        BTN_START[Nút nhấn Bắt đầu]
-        ESP32_Slave[ESP32 Board - Slave]
+    subgraph HienThi["Hiển thị & Giao tiếp"]
+        LCD["Màn hình LCD I2C 16x2"]
+        BTN_START["Nút nhấn Bắt đầu"]
+        ESP32_Slave["ESP32 Board - Slave"]
     end
 
     %% Kết nối CB1
-    ESP32 -- GPIO 15 -->|Trig| CB1
-    CB1 -- Echo -->|GPIO 4| ESP32
+    ESP32 -->|"GPIO 15 (Trig)"| CB1
+    CB1 -->|"GPIO 4 (Echo)"| ESP32
 
     %% Kết nối CB2
-    ESP32 -- GPIO 18 -->|Trig| CB2
-    CB2 -- Echo -->|GPIO 19| ESP32
+    ESP32 -->|"GPIO 18 (Trig)"| CB2
+    CB2 -->|"GPIO 19 (Echo)"| ESP32
 
     %% Kết nối LCD qua I2C
-    ESP32 -- GPIO 22 -->|SCL| LCD
-    ESP32 -- GPIO 21 -->|SDA| LCD
+    ESP32 -->|"GPIO 22 (SCL)"| LCD
+    ESP32 -->|"GPIO 21 (SDA)"| LCD
     
     %% Kết nối Giao tiếp UART (Master -> Slave)
-    ESP32 -- GPIO 17 -->|TX2 sang RX2| ESP32_Slave
+    ESP32 -->|"GPIO 17 (TX2) sang RX2"| ESP32_Slave
     
     %% Kết nối Nút bấm
-    BTN_START -- Nhấn kéo GND -->|GPIO 26| ESP32
+    BTN_START -->|"GPIO 26 (Kéo GND)"| ESP32
 ```
 
 ### Bảng tóm tắt các chân GPIO
@@ -78,6 +78,39 @@ graph LR
 | **Nút nhấn** | Bắt đầu / Dừng đo | `GPIO 26` | Kéo GND khi nhấn (Sử dụng INPUT_PULLUP) |
 
 *Lưu ý: Bạn phải nối chung chân GND giữa mạch Master và mạch Slave.*
+
+---
+
+## 🔄 Luồng Hoạt Động (End-to-End Workflow)
+
+```mermaid
+sequenceDiagram
+    participant Xe as 🚗 Xe đi qua
+    participant CB as ⚡ Cảm biến Siêu âm
+    participant Master as ESP32 Master
+    participant LCD as 📺 LCD 16x2
+    participant Slave as ESP32 Slave
+    participant HiveMQ as ☁️ HiveMQ (Broker)
+    participant Python as 🐍 Python AI
+    participant Phone as 📱 Smartphone
+    participant TB as 📊 ThingsBoard
+
+    Xe->>CB: Đi qua CB1 → CB2
+    CB->>Master: Tín hiệu Echo (t1, t2)
+    Master->>Master: Tính Vận tốc (V) và Hướng đi
+    Master->>LCD: Hiển thị Tốc độ & Hướng (3s)
+    Master->>Slave: Gửi UART: "SPEED:...,DIR:...,ID:..."
+    Slave->>HiveMQ: Publish MQTT -> iot_thanglong/speed
+    HiveMQ->>Python: Nhận message kích hoạt
+    Python->>Phone: Gửi HTTP GET yêu cầu chụp ảnh
+    Phone->>Python: Trả về ảnh JPEG Full HD
+    Python->>Python: Chạy AI (EasyOCR) nhận diện Biển số
+    Python->>HiveMQ: Publish MQTT -> iot_thanglong/plate
+    HiveMQ->>Slave: Nhận kết quả Biển số
+    Slave->>Master: Gửi UART: "RESULT:ID=...,V=...,P=..."
+    Master->>LCD: Hiển thị Biển số (5s)
+    Slave->>TB: Publish telemetry lên ThingsBoard Dashboard
+```
 
 ---
 
