@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IOT Thăng Long - Hệ Thống Phạt Nguội</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00d2ff;
+            --secondary: #3a7bd5;
+            --bg: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(58, 123, 213, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(0, 210, 255, 0.1) 0px, transparent 50%);
+            color: #fff;
+            min-height: 100vh;
+        }
+
+        .header {
+            padding: 2rem;
+            text-align: center;
+            border-bottom: 1px solid var(--glass-border);
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-weight: 800;
+            font-size: 2.5rem;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 2rem;
+        }
+
+        .card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0,210,255,0.1);
+        }
+
+        .card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .info {
+            flex-grow: 1;
+        }
+
+        .plate-input-group {
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .plate-input {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--glass-border);
+            color: #f1f5f9;
+            font-size: 1.6rem;
+            font-weight: 800;
+            padding: 0.5rem;
+            border-radius: 6px;
+            width: 100%;
+            letter-spacing: 2px;
+            font-family: 'Inter', sans-serif;
+            text-align: center;
+            transition: border-color 0.2s;
+        }
+        
+        .plate-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(0, 210, 255, 0.3);
+        }
+
+        .plate-input[readonly] {
+            background: transparent;
+            border-color: transparent;
+            cursor: default;
+        }
+
+        .edit-hint {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-bottom: 1rem;
+            text-align: center;
+            display: block;
+        }
+
+        .speed {
+            color: var(--danger);
+            font-weight: 600;
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .date {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            align-self: flex-start;
+        }
+
+        .badge.pending { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid #f59e0b; }
+        .badge.sent { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid #10b981; }
+        .badge.rejected { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid #ef4444; }
+
+        .actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        button {
+            flex: 1;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-send {
+            background: linear-gradient(135deg, var(--secondary), var(--primary));
+            color: white;
+        }
+
+        .btn-send:hover {
+            box-shadow: 0 0 15px rgba(0, 210, 255, 0.5);
+        }
+
+        .btn-reject {
+            background: rgba(239, 68, 68, 0.1);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-reject:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            transform: translateX(150%);
+            transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 1000;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+        }
+    </style>
+</head>
+<body>
+
+    <header class="header">
+        <h1>Trung Tâm Phạt Nguội IOT Thăng Long</h1>
+        <p style="color: #94a3b8; margin-top: 0.5rem;">Hệ thống giám sát và phê duyệt tự động</p>
+    </header>
+
+    <div class="container">
+        <div class="grid" id="violations-grid">
+            <!-- Thẻ xe sẽ được load qua JS -->
+        </div>
+    </div>
+
+    <div id="toast" class="toast">Đã cập nhật thành công!</div>
+
+    <script>
+        async function fetchViolations() {
+            try {
+                const res = await fetch('/api/violations');
+                const data = await res.json();
+                renderViolations(data);
+            } catch (err) {
+                console.error('Lỗi lấy dữ liệu:', err);
+            }
+        }
+
+        function renderViolations(violations) {
+            const grid = document.getElementById('violations-grid');
+            grid.innerHTML = '';
+
+            if (violations.length === 0) {
+                grid.innerHTML = '<h3 style="grid-column: 1/-1; text-align:center; color:#94a3b8;">Không có dữ liệu vi phạm nào.</h3>';
+                return;
+            }
+
+            violations.forEach(v => {
+                const date = new Date(v.timestamp).toLocaleString('vi-VN');
+                
+                let badgeClass = '';
+                let statusText = '';
+                if(v.status === 'pending') { badgeClass = 'pending'; statusText = 'Chờ Duyệt'; }
+                if(v.status === 'sent') { badgeClass = 'sent'; statusText = 'Đã Gửi Phạt'; }
+                if(v.status === 'rejected') { badgeClass = 'rejected'; statusText = 'Đã Hủy'; }
+
+                const isPending = v.status === 'pending';
+
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <div class="badge ${badgeClass}">${statusText}</div>
+                    <img src="${v.image_url}" alt="Bằng chứng" onerror="this.src='https://via.placeholder.com/600x400/1e293b/fff?text=No+Image'">
+                    <div class="info">
+                        <div class="plate-input-group">
+                            <input type="text" class="plate-input" id="plate-${v._id}" value="${v.plate}" ${!isPending ? 'readonly' : ''} />
+                        </div>
+                        ${isPending ? '<span class="edit-hint">(Có thể sửa biển số nếu AI đọc sai)</span>' : ''}
+                        <div class="speed">Tốc độ: ${v.speed} km/h</div>
+                        <div class="date">${date}</div>
+                    </div>
+                    ${isPending ? `
+                    <div class="actions">
+                        <button class="btn-reject" onclick="handleAction('${v._id}', 'reject')">Xóa Bỏ</button>
+                        <button class="btn-send" onclick="handleAction('${v._id}', 'send')">Gửi Phạt Ngay</button>
+                    </div>
+                    ` : ''}
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        async function handleAction(id, action) {
+            try {
+                let bodyData = {};
+                // Trích xuất biển số mới từ ô input nếu là hành động duyệt gửi phạt
+                if (action === 'send') {
+                    const plateInput = document.getElementById(`plate-${id}`);
+                    if (plateInput) {
+                        bodyData.plate = plateInput.value.trim().toUpperCase();
+                        if(bodyData.plate === "") {
+                            showToast('Vui lòng nhập biển số hợp lệ!');
+                            return;
+                        }
+                    }
+                }
+
+                const res = await fetch(`/api/violations/${id}/${action}`, { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyData)
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast(data.message);
+                    fetchViolations(); // Reload
+                } else {
+                    showToast('Lỗi: ' + data.error);
+                }
+            } catch (error) {
+                showToast('Lỗi kết nối máy chủ');
+            }
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Tự động load dữ liệu
+        fetchViolations();
+    </script>
+</body>
+</html>

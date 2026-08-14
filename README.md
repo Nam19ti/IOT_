@@ -42,6 +42,7 @@ graph LR
     subgraph HienThi["Hiển thị & Giao tiếp"]
         LCD["Màn hình LCD I2C 16x2"]
         BTN_START["Nút nhấn Bắt đầu"]
+        BTN_MANUAL["Nút Chụp Thủ Công"]
         ESP32_Slave["ESP32 Board - Slave"]
     end
 
@@ -62,6 +63,7 @@ graph LR
     
     %% Kết nối Nút bấm
     BTN_START -->|"GPIO 26 (Kéo GND)"| ESP32
+    BTN_MANUAL -->|"GPIO 14 (Kéo GND)"| ESP32
 ```
 
 ### Bảng tóm tắt các chân GPIO
@@ -75,7 +77,8 @@ graph LR
 | **LCD I2C 16x2**| SDA | `GPIO 21` | I2C Data mặc định của ESP32 Master |
 | | SCL | `GPIO 22` | I2C Clock mặc định của ESP32 Master |
 | **ESP32 Slave** | RX2 | `GPIO 16` | Nối vào chân TX2 (17) của Master để nhận tốc độ |
-| **Nút nhấn** | Bắt đầu / Dừng đo | `GPIO 26` | Kéo GND khi nhấn (Sử dụng INPUT_PULLUP) |
+| **Nút nhấn 1** | Bắt đầu / Dừng đo | `GPIO 26` | Kéo GND khi nhấn (Sử dụng INPUT_PULLUP) |
+| **Nút nhấn 2** | Chụp ảnh thủ công | `GPIO 14` | Kéo GND khi nhấn để gửi lệnh chụp ngay lập tức |
 
 *Lưu ý: Bạn phải nối chung chân GND giữa mạch Master và mạch Slave.*
 
@@ -101,10 +104,10 @@ sequenceDiagram
     Master->>LCD: Hiển thị Tốc độ & Hướng (3s)
     Master->>Slave: Gửi UART: "SPEED:...,DIR:...,ID:..."
     Slave->>HiveMQ: Publish MQTT -> iot_thanglong/speed
-    HiveMQ->>Python: Nhận message kích hoạt
-    Python->>Phone: Gửi HTTP GET yêu cầu chụp ảnh
+    HiveMQ->>Python: Nhận message (Tự động hoặc Chụp thủ công)
+    Python->>Phone: Chụp liên tiếp 10 bức ảnh (10 frames)
     Phone->>Python: Trả về ảnh JPEG Full HD
-    Python->>Python: Chạy AI (EasyOCR) nhận diện Biển số
+    Python->>Python: Khử nhiễu, chạy EasyOCR và Bầu chọn biển số đúng nhất
     Python->>HiveMQ: Publish MQTT -> iot_thanglong/plate
     HiveMQ->>Slave: Nhận kết quả Biển số
     Slave->>Master: Gửi UART: "RESULT:ID=...,V=...,P=..."
@@ -132,7 +135,7 @@ Mở file `alpr_server.py` trong thư mục `Python_ALPR`:
 
 Chạy lệnh để cài đặt thư viện:
 ```bash
-pip install opencv-python numpy easyocr paho-mqtt requests
+pip install opencv-python numpy easyocr paho-mqtt requests flask
 ```
 
 Khởi động Server:
@@ -140,8 +143,10 @@ Khởi động Server:
 python alpr_server.py
 ```
 
-### Bước 4: Vận Hành
-Quẹt tay qua 2 cảm biến siêu âm. Mạch Master sẽ tính tốc độ -> truyền cho Slave -> Slave báo qua WiFi về Python -> Python tự động lấy ảnh nét từ điện thoại -> Nhận diện chữ -> Cập nhật lên web!
+### Bước 4: Vận Hành & Căn Chỉnh Camera
+1. **Căn chỉnh Camera:** Mở trình duyệt web truy cập vào `http://localhost:5000/`. Bạn sẽ thấy luồng video trực tiếp có hình chữ thập (Crosshair) màu đỏ ở giữa. Hãy điều chỉnh góc camera điện thoại sao cho chữ thập ngắm chuẩn vào làn đường đo tốc độ của cảm biến.
+2. **Chụp thủ công (Manual Capture):** Nhấn nút vật lý nối vào `GPIO 14` trên mạch Master. ESP32 sẽ lập tức ra lệnh cho Python chụp 10 bức ảnh và nhận diện (Rất hữu ích để test góc nhìn).
+3. **Đo tốc độ tự động:** Cho xe chạy qua 2 cảm biến siêu âm. Mạch Master sẽ tính tốc độ -> truyền cho Slave -> báo Python chụp 10 bức ảnh nét -> AI bầu chọn kết quả tốt nhất -> Lưu ảnh và gửi lên Node.js để phạt nguội!
 
 ---
 
