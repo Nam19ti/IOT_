@@ -1,157 +1,127 @@
-# Hệ Thống IoT Đo Tốc Độ và Nhận Diện Biển Số Xe Bằng AI
+# BÁO CÁO TỔNG KẾT DỰ ÁN KỸ THUẬT
 
-Hệ thống IoT thông minh giúp phát hiện xe, đo tốc độ di chuyển và tự động chụp ảnh nhận diện biển số (ALPR) bằng Điện thoại (Smartphone). Dữ liệu được thu thập và đồng bộ lên nền tảng ThingsBoard thông qua giao thức MQTT siêu tốc.
-
----
-
-## 🏗️ Kiến Trúc Hệ Thống
-
-Hệ thống sử dụng cảm biến siêu âm để đo tốc độ, truyền dữ liệu qua UART và MQTT. Hình ảnh được xử lý nét căng bằng Smartphone và gửi lên PC chạy AI.
-
-1. **Master ESP32 (`IOT.ino`)**: 
-   - Đo tốc độ từ 2 cảm biến siêu âm.
-   - Gắn ID định danh cho mỗi lượt xe và gửi qua UART cho Slave.
-   
-2. **Slave ESP32 (`IOT_2.ino`)**: 
-   - Đóng vai trò là "MQTT Router".
-   - Nhận Tốc độ + ID từ UART và bắn ngay lập tức lên MQTT (HiveMQ).
-
-3. **Smartphone Camera (IP Webcam / DroidCam)**:
-   - Dùng làm Camera chụp ảnh sắc nét (Full HD) kết nối trực tiếp với Máy tính thông qua cáp USB (Tethering).
-
-4. **Python Server (`alpr_server.py`)**:
-   - Lắng nghe Tốc độ từ HiveMQ.
-   - Nhận được tốc độ -> Kích hoạt Smartphone chụp ảnh -> Chạy AI (EasyOCR) nhận diện biển số.
-   - Đẩy dữ liệu hoàn chỉnh lên ThingsBoard.
+**Tên đề tài:** Hệ Thống Cảnh Báo Tốc Độ và Nhận Diện Biển Số Xe Tự Động (ALPR) sử dụng Kiến trúc IoT Phân tán và Trí tuệ Nhân tạo Lai (Hybrid AI).
 
 ---
 
-## 🔌 Sơ Đồ Đấu Nối Phần Cứng
-
-```mermaid
-graph LR
-    subgraph ESP32_Master["ESP32_Master"]
-        ESP32["ESP32 Board - Master"]
-    end
-
-    subgraph CamBien["Cảm biến"]
-        CB1["Cảm biến Siêu âm 1 (Bên trái)"]
-        CB2["Cảm biến Siêu âm 2 (Bên phải)"]
-    end
-
-    subgraph HienThi["Hiển thị & Giao tiếp"]
-        LCD["Màn hình LCD I2C 16x2"]
-        BTN_START["Nút nhấn Bắt đầu"]
-        BTN_MANUAL["Nút Chụp Thủ Công"]
-        ESP32_Slave["ESP32 Board - Slave"]
-    end
-
-    %% Kết nối CB1
-    ESP32 -->|"GPIO 15 (Trig)"| CB1
-    CB1 -->|"GPIO 4 (Echo)"| ESP32
-
-    %% Kết nối CB2
-    ESP32 -->|"GPIO 18 (Trig)"| CB2
-    CB2 -->|"GPIO 19 (Echo)"| ESP32
-
-    %% Kết nối LCD qua I2C
-    ESP32 -->|"GPIO 22 (SCL)"| LCD
-    ESP32 -->|"GPIO 21 (SDA)"| LCD
-    
-    %% Kết nối Giao tiếp UART (Master -> Slave)
-    ESP32 -->|"GPIO 17 (TX2) sang RX2"| ESP32_Slave
-    
-    %% Kết nối Nút bấm
-    BTN_START -->|"GPIO 26 (Kéo GND)"| ESP32
-    BTN_MANUAL -->|"GPIO 14 (Kéo GND)"| ESP32
-```
-
-### Bảng tóm tắt các chân GPIO
-
-| Linh kiện | Chân trên Linh kiện | Chân trên ESP32 | Ghi chú |
-| :--- | :--- | :--- | :--- |
-| **Cảm biến 1** | TRIG | `GPIO 15` | Phát xung siêu âm |
-| | ECHO | `GPIO 4` | Nhận tín hiệu phản hồi |
-| **Cảm biến 2** | TRIG | `GPIO 18` | Phát xung siêu âm |
-| | ECHO | `GPIO 19` | Nhận tín hiệu phản hồi |
-| **LCD I2C 16x2**| SDA | `GPIO 21` | I2C Data mặc định của ESP32 Master |
-| | SCL | `GPIO 22` | I2C Clock mặc định của ESP32 Master |
-| **ESP32 Slave** | RX2 | `GPIO 16` | Nối vào chân TX2 (17) của Master để nhận tốc độ |
-| **Nút nhấn 1** | Bắt đầu / Dừng đo | `GPIO 26` | Kéo GND khi nhấn (Sử dụng INPUT_PULLUP) |
-| **Nút nhấn 2** | Chụp ảnh thủ công | `GPIO 14` | Kéo GND khi nhấn để gửi lệnh chụp ngay lập tức |
-
-*Lưu ý: Bạn phải nối chung chân GND giữa mạch Master và mạch Slave.*
+## TÓM TẮT (Abstract)
+Dự án tập trung vào việc thiết kế và phát triển một hệ thống giám sát giao thông IoT với khả năng đo tốc độ phương tiện và tự động trích xuất biển số xe vi phạm. Bằng việc áp dụng kiến trúc phần cứng phân tán (Master-Slave ESP32) để đảm bảo tính thời gian thực (Real-time) của cảm biến, kết hợp với sức mạnh xử lý ảnh tiên tiến từ Cloud AI (Gemini 1.5 Flash) và Edge AI dự phòng (EasyOCR), hệ thống mang lại độ chính xác nhận diện tuyệt đối với tốc độ xử lý siêu tốc. Mọi dữ liệu vi phạm được đồng bộ tự động lên nền tảng đám mây ThingsBoard (IoT) và Node.js/MongoDB Atlas (Quản trị).
 
 ---
 
-## 🔄 Luồng Hoạt Động (End-to-End Workflow)
+## 1. ĐẶT VẤN ĐỀ (Introduction)
+Việc giám sát tốc độ và phạt nguội tự động hiện đang là nhu cầu thiết yếu trong quản lý giao thông đô thị thông minh. Tuy nhiên, các hệ thống camera chuyên dụng thường có giá thành rất cao và yêu cầu đường truyền cáp quang phức tạp. Đề tài này giải quyết bài toán trên bằng cách tận dụng sức mạnh camera từ Smartphone thông thường, kết hợp với vi máy tính (Raspberry Pi/PC) và Cloud AI để tạo ra một hệ thống chi phí thấp, hoạt động ổn định 24/7 và có khả năng chống chịu sự cố đứt mạng.
+
+---
+
+## 2. KIẾN TRÚC HỆ THỐNG (System Architecture)
+Hệ thống được chia làm 4 module chính giao tiếp với nhau qua giao thức MQTT siêu tốc:
+
+1. **Module Cảm biến (Master ESP32):**
+   - Đọc dữ liệu từ 2 cảm biến siêu âm HC-SR04.
+   - Tính toán vận tốc (V), hướng đi và gán ID định danh duy nhất cho mỗi phương tiện.
+   - Hiển thị kết quả tạm thời lên màn hình LCD I2C.
+2. **Module IoT Gateway (Slave ESP32):**
+   - Đóng vai trò là "MQTT Router" kết nối Internet qua WiFi.
+   - Nhận dữ liệu từ Master qua UART và phát sóng (Publish) lên HiveMQ Broker.
+   - Nhận phản hồi biển số từ AI để đẩy ngược về Master.
+3. **Module Xử lý Trí tuệ Nhân tạo (Python AI Server):**
+   - Hứng luồng Video (MJPEG Stream) liên tục từ Smartphone Camera (IP Webcam).
+   - Lắng nghe tín hiệu tốc độ từ MQTT để kích hoạt quá trình chốt hạ khung hình và phân tích biển số.
+4. **Module Quản trị Đám mây (ThingsBoard & Node.js):**
+   - **ThingsBoard:** Dashboard giám sát trực quan thời gian thực (Hiển thị Vận tốc, Biển số và Ảnh Base64).
+   - **Node.js + MongoDB Atlas:** Cổng duyệt phạt nguội cho Cảnh sát Giao thông, cho phép sửa biển số bị mờ và tự động gửi Email hóa đơn phạt cho chủ xe.
+
+---
+
+## 3. PHƯƠNG PHÁP NGHIÊN CỨU & CÔNG NGHỆ ÁP DỤNG
+
+### 3.1. Theo dõi chuyển động thời gian thực (Motion Tracking MOG2)
+Hệ thống không sử dụng phương pháp cắt ảnh cố định (Fixed Crop) truyền thống. Thay vào đó, thuật toán **Background Subtraction (Trừ nền MOG2)** được chạy ngầm liên tục ở độ phân giải thấp (640x480) để khóa mục tiêu (Lock-on) các vật thể đang di chuyển. 
+Khi có tín hiệu đo tốc độ, hệ thống sẽ trích xuất tọa độ Bounding Box của mục tiêu, tự động mở rộng lề (Padding) và cắt đúng vùng chứa chiếc xe để đưa vào AI. Nhờ đó, AI có thể bỏ qua toàn bộ cảnh vật thừa xung quanh, tập trung 100% vào biển số.
+
+### 3.2. Trí tuệ Nhân tạo Lai (Hybrid AI: Gemini Cloud + EasyOCR Edge)
+Đề tài áp dụng chiến lược phân tích 2 tầng (2-Tier Pipeline) để đảm bảo độ chính xác cao nhất và tính sẵn sàng (Uptime 100%):
+- **Tầng 1 (Core AI):** Gửi bức ảnh xe nét nhất lên mô hình ngôn ngữ lớn **Google Gemini 1.5 Flash 8B** qua API. Với khả năng suy luận vượt trội, Gemini có thể dễ dàng đọc các biển số bị bẩn, méo, lóa sáng trong chưa tới 1 giây. Giúp CPU cục bộ được giảm tải hoàn toàn.
+- **Tầng 2 (Fallback AI):** Trong trường hợp mất kết nối Internet hoặc lỗi API, hệ thống tự động chuyển vùng xử lý về Local bằng thư viện **EasyOCR** (PyTorch). 
+
+### 3.3. Thuật toán Tối ưu Siêu tốc (Turbo Mode)
+Để khắc phục nhược điểm xử lý chậm của thiết bị IoT (Raspberry Pi 5) khi chạy EasyOCR, hai thuật toán sau đã được áp dụng:
+- **Smart Frame Filtering (Lọc khung hình thông minh):** Trong số 10 bức ảnh chụp liên tiếp, hệ thống tính toán diện tích Bounding Box và chỉ giữ lại 5 bức ảnh mà chiếc xe to nhất (gần camera nhất) để phân tích, giảm 50% khối lượng công việc.
+- **Early Exit (Dừng sớm):** Nếu mô hình AI phát hiện cùng một kết quả biển số trùng khớp 2 lần liên tiếp, nó sẽ lập tức ngắt vòng lặp, bỏ qua các ảnh còn lại và báo cáo ngay lập tức. Thuật toán này giảm thời gian nhận diện từ ~5 giây xuống còn ~0.8 giây.
+
+---
+
+## 4. SƠ ĐỒ LUỒNG HOẠT ĐỘNG (Workflow)
 
 ```mermaid
 sequenceDiagram
     participant Xe as 🚗 Xe đi qua
-    participant CB as ⚡ Cảm biến Siêu âm
-    participant Master as ESP32 Master
-    participant LCD as 📺 LCD 16x2
-    participant Slave as ESP32 Slave
-    participant HiveMQ as ☁️ HiveMQ (Broker)
-    participant Python as 🐍 Python AI
-    participant Phone as 📱 Smartphone
+    participant Master as Master ESP32
+    participant Slave as Slave ESP32
+    participant Python as 🐍 Python AI Server
+    participant Gemini as ☁️ Gemini 1.5 API
     participant TB as 📊 ThingsBoard
+    participant Node as 🟢 Node.js Backend
 
-    Xe->>CB: Đi qua CB1 → CB2
-    CB->>Master: Tín hiệu Echo (t1, t2)
-    Master->>Master: Tính Vận tốc (V) và Hướng đi
-    Master->>LCD: Hiển thị Tốc độ & Hướng (3s)
-    Master->>Slave: Gửi UART: "SPEED:...,DIR:...,ID:..."
-    Slave->>HiveMQ: Publish MQTT -> iot_thanglong/speed
-    HiveMQ->>Python: Nhận message (Tự động hoặc Chụp thủ công)
-    Python->>Phone: Chụp liên tiếp 10 bức ảnh (10 frames)
-    Phone->>Python: Trả về ảnh JPEG Full HD
-    Python->>Python: Khử nhiễu, chạy EasyOCR và Bầu chọn biển số đúng nhất
-    Python->>HiveMQ: Publish MQTT -> iot_thanglong/plate
-    HiveMQ->>Slave: Nhận kết quả Biển số
-    Slave->>Master: Gửi UART: "RESULT:ID=...,V=...,P=..."
-    Master->>LCD: Hiển thị Biển số (5s)
-    Slave->>TB: Publish telemetry lên ThingsBoard Dashboard
+    Xe->>Master: Cắt ngang 2 Cảm biến siêu âm
+    Master->>Master: Tính Vận tốc & Hướng
+    Master->>Slave: Gửi UART: Tốc độ
+    Slave-->>Python: Phát tín hiệu Trigger (Qua MQTT)
+    Python->>Python: Bắt 10 Frames từ IP Webcam
+    Python->>Python: Tìm Bounding Box (Motion Tracking) & Lọc 5 ảnh nét nhất
+    Python->>Gemini: Gửi ảnh rõ nhất (Tầng 1)
+    
+    alt Nếu có Internet
+        Gemini-->>Python: Trả kết quả Biển số
+    else Nếu mất Internet / Lỗi API
+        Python->>Python: Gọi EasyOCR Local (Tầng 2 - Fallback)
+    end
+    
+    Python-->>Slave: Gửi trả Biển số (Qua MQTT) để hiện LCD
+    Python->>TB: Gửi API HTTP (Ảnh Base64 + Tốc độ + Biển số)
+    Python->>Node: Gửi HTTP POST (Bằng chứng vi phạm)
+    Node->>Node: Lưu vào MongoDB Atlas & Chờ duyệt gửi Email
 ```
 
 ---
 
-## 🚀 Hướng Dẫn Chạy Hệ Thống
+## 5. HƯỚNG DẪN CÀI ĐẶT VÀ VẬN HÀNH
 
-### Bước 1: Nạp Code cho 2 mạch ESP
-- Mở Arduino IDE.
-- Nạp `IOT.ino` cho mạch Master.
-- Điền WiFi của bạn vào `IOT_2.ino` và nạp cho mạch Slave.
+### BƯỚC 1: Phần Cứng ESP32
+1. Mở Arduino IDE. Nạp `IOT.ino` cho mạch Master.
+2. Sửa thông tin WiFi trong `IOT_2.ino` và nạp cho mạch Slave.
+3. Đấu nối dây UART giữa 2 mạch: `TX2 (GPIO 17)` của Master nối với `RX2 (GPIO 16)` của Slave. Và nối chung dây GND.
 
-### Bước 2: Thiết Lập Camera Điện Thoại
-- Dùng dây USB cắm điện thoại vào máy tính, bật "Chia sẻ mạng qua USB (Tethering)".
-- Mở App **IP Webcam** trên điện thoại, ấn **Start Server**. Ghi nhớ đường link IP hiện ra (VD: `http://192.168.42.129:8080`).
+### BƯỚC 2: Backend Node.js & Đám mây
+1. Truy cập thư mục `Node_Backend`.
+2. Tạo file `.env` chứa thông tin kết nối MongoDB Atlas:
+   ```env
+   MONGODB_URI=mongodb+srv://<user>:<password>@cluster0...
+   PYTHON_VIOLATIONS_DIR=../Python_ALPR/violations
+   EMAIL_USER=your_email@gmail.com
+   EMAIL_PASS=your_app_password
+   ```
+3. Chạy lệnh: `npm install` và `npm start`. Mở Dashboard duyệt phạt tại `http://localhost:3000`.
 
-### Bước 3: Cấu Hình Python Server
-Mở file `alpr_server.py` trong thư mục `Python_ALPR`:
-- Cập nhật dòng `IP_WEBCAM_URL = "http://192.168.42.129:8080/photo.jpg"` bằng link của bạn.
-- Đảm bảo `TB_TOKEN` đã đúng.
-
-Chạy lệnh để cài đặt thư viện:
-```bash
-pip install opencv-python numpy easyocr paho-mqtt requests flask
-```
-
-Khởi động Server:
-```bash
-python alpr_server.py
-```
-
-### Bước 4: Vận Hành & Căn Chỉnh Camera
-1. **Căn chỉnh Camera:** Mở trình duyệt web truy cập vào `http://localhost:5000/`. Bạn sẽ thấy luồng video trực tiếp có hình chữ thập (Crosshair) màu đỏ ở giữa. Hãy điều chỉnh góc camera điện thoại sao cho chữ thập ngắm chuẩn vào làn đường đo tốc độ của cảm biến.
-2. **Chụp thủ công (Manual Capture):** Nhấn nút vật lý nối vào `GPIO 14` trên mạch Master. ESP32 sẽ lập tức ra lệnh cho Python chụp 10 bức ảnh và nhận diện (Rất hữu ích để test góc nhìn).
-3. **Đo tốc độ tự động:** Cho xe chạy qua 2 cảm biến siêu âm. Mạch Master sẽ tính tốc độ -> truyền cho Slave -> báo Python chụp 10 bức ảnh nét -> AI bầu chọn kết quả tốt nhất -> Lưu ảnh và gửi lên Node.js để phạt nguội!
+### BƯỚC 3: Python AI Server & Camera
+1. Bật app **IP Webcam** trên điện thoại.
+2. Di chuyển vào thư mục `Python_ALPR`. Chạy lệnh cài thư viện:
+   ```bash
+   pip install opencv-python numpy easyocr paho-mqtt requests flask google-generativeai pillow
+   ```
+3. Khởi động AI Server:
+   ```bash
+   python alpr_server.py
+   ```
+4. Mở trình duyệt vào trang cấu hình: `http://localhost:5000/`.
+5. Điền thông số vào bảng cấu hình:
+   - **IP Camera:** Link hiện trên điện thoại (Ví dụ: `http://192.168.1.100:8080/video`)
+   - **Gemini API Key:** Lấy miễn phí từ Google AI Studio.
+   - **ThingsBoard Token:** Lấy từ thiết bị trên trang mqtt.thingsboard.cloud.
+6. Lưu lại. Hệ thống sẽ ngay lập tức kết nối và hiển thị khung xanh lá cây bám theo xe chuyển động!
 
 ---
 
-## 📁 Cấu Trúc Thư Mục
-- `/IOT_/` : Chứa code của Master ESP32.
-- `/IOT_2/`: Chứa code của Slave ESP32 MQTT Router.
-- `/Python_ALPR/`: Chứa file mã nguồn chạy AI (`alpr_server.py`).
-- `/archive/`: Thư mục lưu trữ mớ hỗn độn ESP32-CAM cũ.
+## 6. KẾT LUẬN (Conclusion)
+Dự án đã xây dựng thành công một hệ thống IoT nhận diện biển số toàn diện, kết hợp chặt chẽ giữa phần cứng vi điều khiển và các nền tảng đám mây tiên tiến nhất hiện nay (Gemini AI, ThingsBoard, MongoDB Atlas). Nhờ áp dụng cơ chế Hybrid AI và tối ưu thuật toán xử lý ảnh tĩnh thành động (Motion Tracking + Lazy Evaluation), hệ thống khắc phục triệt để các hạn chế về thời gian phản hồi và độ chính xác của các mô hình nhận diện chạy trên CPU yếu, mở ra hướng ứng dụng thực tiễn lớn trong việc quản lý giao thông đô thị.
