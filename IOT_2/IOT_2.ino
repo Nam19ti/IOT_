@@ -1,7 +1,9 @@
 #include <HardwareSerial.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include <ArduinoJson.h> // Cần cài đặt thư viện ArduinoJson trong Library Manager
+#include <ArduinoJson.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
 // =========================================================
 // CẤU HÌNH WIFI VÀ MQTT
@@ -9,176 +11,85 @@
 const char* WIFI_SSID     = "NONNET";
 const char* WIFI_PASSWORD = "abcd1234";
 
-// 1. HiveMQ (Dùng để giao tiếp siêu tốc với Python)
 const char* HIVEMQ_SERVER = "broker.hivemq.com";
 const int   HIVEMQ_PORT   = 1883;
 
-// 2. ThingsBoard (Dùng để báo cáo lên Đám mây)
-const char* TB_SERVER     = "mqtt.thingsboard.cloud";
-const int   TB_PORT       = 1883;
-const char* TB_TOKEN      = "GkUmbnN2vDPBljtNCKfo"; 
+WiFiClient   espClient;
+PubSubClient mqttClient(espClient);
 
-// Bắt buộc phải tạo 2 WiFiClient riêng biệt cho 2 kết nối MQTT
-WiFiClient   espClient_Hive;
-PubSubClient hiveClient(espClient_Hive);
+// LCD I2C
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-WiFiClient   espClient_TB;
-PubSubClient tbClient(espClient_TB);
-
-unsigned long lastMqttAttempt = 0;
-const unsigned long MQTT_RETRY_MS = 5000;
+// UART2 giao tiếp với IOT_1
+#define UART2_TX 17
+#define UART2_RX 16
 
 // =========================================================
-// BUFFER UART
+// BIẾN THỜI GIAN CHỜ (TIMERS)
 // =========================================================
-#define LINE_BUF_SIZE 128
-char lineBuf[LINE_BUF_SIZE];
-int  linePos = 0;
+unsigned long carInDetectedTime = 0;
+bool isWaitingToCapture = false;
+
+unsigned long carOutDetectedTime = 0;
+bool isWaitingToClose = false;
 
 // =========================================================
-// KẾT NỐI WIFI
+// HÀM HIỂN THỊ LCD
+// =========================================================
+void printLCD(String line1, String line2) {
+  lcd.clear();
+  lcd.setCursor(0, 0); lcd.print(line1);
+  lcd.setCursor(0, 1); lcd.print(line2);
+  Serial.println(">> LCD: [" + line1 + "] | [" + line2 + "]");
+}
+
+// =========================================================
+// KẾT NỐI WIFI VÀ MQTT
 // =========================================================
 void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
-  Serial.print(">> WiFi: Dang ket noi");
+  printLCD("Dang ket noi", "WiFi...");
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
-    delay(500);
-    Serial.print(".");
-  }
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println(" OK! IP: " + WiFi.localIP().toString());
-  } else {
-    Serial.println(" THAT BAI.");
-  }
+  while (WiFi.status() != WL_CONNECTED) { delay(500); }
+  printLCD("WiFi OK", WiFi.localIP().toString());
+  delay(1000);
 }
 
-// =========================================================
-// HÀM XỬ LÝ KHI NHẬN ĐƯỢC KẾT QUẢ AI TỪ PYTHON (QUA HIVEMQ)
-// =========================================================
-void hiveCallback(char* topic, byte* payload, unsigned int length) {
-  if (strcmp(topic, "iot_thanglong/plate") == 0) {
-    // Parse JSON
-    StaticJsonDocument<256> doc;
-    DeserializationError error = deserializeJson(doc, payload, length);
-
-    if (error) {
-      Serial.print(F("deserializeJson() failed: "));
-      Serial.println(error.f_str());
-      return;
-    }
-
-    const char* idStr = doc["id"];
-    float speed = doc["speed"];
-    const char* dir = doc["direction"];
-    const char* plate = doc["plate"];
-
-    Serial.println("=========================================");
-    Serial.println(">> NHẬN KẾT QUẢ AI TỪ PYTHON:");
-    Serial.printf("   ID: %s | Tốc độ: %.1f | Biển số: %s\n", idStr, speed, plate);
-    
-    // 1. TRUYỀN NGƯỢC VỀ MẠCH MASTER ĐỂ HIỂN THỊ LCD (QUA UART)
-    // Định dạng: "RESULT:ID=1,V=25.3,P=30A-12345\n"
-    Serial2.print("RESULT:ID=");
-    Serial2.print(idStr);
-    Serial2.print(",V=");
-    Serial2.print(speed, 1);
-    Serial2.print(",P=");
-    Serial2.println(plate);
-
-    // 2. GỬI BÁO CÁO LÊN THINGSBOARD
-    if (tbClient.connected()) {
-      StaticJsonDocument<200> tbDoc;
-      tbDoc["speed"] = speed;
-      tbDoc["direction"] = dir;
-      tbDoc["license_plate"] = plate;
-      
-      char tbPayload[200];
-      serializeJson(tbDoc, tbPayload);
-      
-      tbClient.publish("v1/devices/me/telemetry", tbPayload);
-      Serial.println(">> ĐÃ BÁO CÁO LÊN THINGSBOARD THÀNH CÔNG!");
-    } else {
-      Serial.println("!!! KHÔNG THỂ BÁO CÁO THINGSBOARD (MẤT KẾT NỐI) !!!");
-    }
-    Serial.println("=========================================");
-  }
-}
-
-// =========================================================
-// DUY TRÌ 2 KẾT NỐI MQTT
-// =========================================================
 void maintainMQTT() {
-  bool hiveConnected = hiveClient.connected();
-  bool tbConnected = tbClient.connected();
+  if (WiFi.status() != WL_CONNECTED) connectWiFi();
   
-  if (hiveConnected) hiveClient.loop();
-  if (tbConnected) tbClient.loop();
-  
-  if (hiveConnected && tbConnected) return; // Cả 2 đều OK
-  if (WiFi.status() != WL_CONNECTED) return;
-  if (millis() - lastMqttAttempt < MQTT_RETRY_MS) return;
-  lastMqttAttempt = millis();
-
-  // 1. Kết nối HiveMQ
-  if (!hiveConnected) {
-    Serial.print(">> KET NOI HIVEMQ...");
-    String clientId = "ESP32_Slave_Hive_" + String(random(0xffff), HEX);
-    if (hiveClient.connect(clientId.c_str())) {
-      Serial.println(" OK!");
-      hiveClient.subscribe("iot_thanglong/plate"); // Lắng nghe biển số từ Python
+  if (!mqttClient.connected()) {
+    printLCD("Dang ket noi", "Đám Mây MQTT...");
+    String clientId = "ESP32_Slave_VETC_" + String(random(0xffff), HEX);
+    if (mqttClient.connect(clientId.c_str())) {
+      printLCD("MQTT San sang!", "Cho xe vao tram");
+      mqttClient.subscribe("iot_thanglong/gate"); // Lắng nghe lệnh mở cổng từ Node.js
+      mqttClient.subscribe("iot_thanglong/plate"); // (Optional) Nhận kết quả biển số nếu cần
     } else {
-      Serial.println(" THAT BAI!");
+      delay(2000);
     }
   }
-
-  // 2. Kết nối ThingsBoard
-  if (!tbConnected) {
-    Serial.print(">> KET NOI THINGSBOARD...");
-    String clientId = "ESP32_Slave_TB_" + String(random(0xffff), HEX);
-    if (tbClient.connect(clientId.c_str(), TB_TOKEN, NULL)) {
-      Serial.println(" OK!");
-    } else {
-      Serial.println(" THAT BAI!");
-    }
-  }
+  mqttClient.loop();
 }
 
 // =========================================================
-// XỬ LÝ KHI NHẬN ĐƯỢC DỮ LIỆU TỪ UART MASTER (BẮN LÊN HIVEMQ)
+// XỬ LÝ LỆNH TỪ MÁY CHỦ (NODE.JS / PYTHON) TRẢ VỀ
 // =========================================================
-void processLine(char* raw) {
-  int len = strlen(raw);
-  while (len > 0 && (raw[len-1] == '\r' || raw[len-1] == ' ')) raw[--len] = '\0';
-  if (len == 0) return;
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, payload, length);
+  if (error) return;
 
-  String msg = String(raw);
-  int speedIdx = msg.indexOf("SPEED:");
-
-  if (speedIdx >= 0) {
-    // "SPEED:25.3,DIR:Trai->Phai,ID:1"
-    int iSpeed = speedIdx + 6;
-    int iComma = msg.indexOf(",DIR:", speedIdx);
-    int iDir   = iComma + 5;
-    int iIdTag = msg.indexOf(",ID:", iDir);
-    int iId    = iIdTag + 4;
-
-    if (iComma < 0 || iIdTag < 0) return; 
-
-    String speedStr = msg.substring(iSpeed, iComma);
-    String dir      = msg.substring(iDir, iIdTag);
-    String idStr    = msg.substring(iId);
+  if (strcmp(topic, "iot_thanglong/gate") == 0) {
+    const char* action = doc["action"]; // "OPEN" hoặc "DENY"
+    const char* plate = doc["plate"];
     
-    Serial.println(">> ĐÃ NHẬN TỐC ĐỘ TỪ MASTER: " + speedStr + " km/h | ID: " + idStr);
-
-    if (hiveClient.connected()) {
-      // Bắn thẳng lên Python thông qua HiveMQ
-      String payload = "{\"id\":\"" + idStr + "\",\"speed\":" + speedStr + ",\"direction\":\"" + dir + "\"}";
-      hiveClient.publish("iot_thanglong/speed", payload.c_str());
-      Serial.println("   -> Đã bắn lên HiveMQ, chờ Python chụp ảnh...");
-    } else {
-      Serial.println("   -> LỖI: Mất mạng HiveMQ, không thể gọi Python!");
+    if (action && strcmp(action, "OPEN") == 0) {
+      printLCD("Xe: " + String(plate), "-> MO CONG (OK)");
+      Serial2.println("OPEN"); // Ra lệnh cho Mạch 1 mở cổng
+    } else if (action && strcmp(action, "DENY") == 0) {
+      printLCD("Xe: " + String(plate), "-> TU CHOI/HET $");
+      // Không mở cổng
     }
   }
 }
@@ -188,23 +99,14 @@ void processLine(char* raw) {
 // =========================================================
 void setup() {
   Serial.begin(115200);
-  delay(1000);
-
-  // Mở UART2: RX = 16, TX = 17
-  Serial2.begin(115200, SERIAL_8N1, 16, 17);
-
-  connectWiFi();
+  Serial2.begin(115200, SERIAL_8N1, 16, 17); // Đảm bảo RX/TX chéo với Mạch 1
   
-  hiveClient.setServer(HIVEMQ_SERVER, HIVEMQ_PORT);
-  hiveClient.setCallback(hiveCallback);
-  
-  tbClient.setServer(TB_SERVER, TB_PORT);
-  
-  // Tăng buffer size cho PubSubClient (Tránh lỗi payload JSON dài)
-  hiveClient.setBufferSize(512);
-  tbClient.setBufferSize(512);
+  lcd.init();
+  lcd.backlight();
+  printLCD("Khoi dong", "VETC Slave...");
 
-  Serial.println(">> SLAVE HUB (DUAL MQTT) ĐÃ SẴN SÀNG.");
+  mqttClient.setServer(HIVEMQ_SERVER, HIVEMQ_PORT);
+  mqttClient.setCallback(mqttCallback);
 }
 
 // =========================================================
@@ -213,19 +115,57 @@ void setup() {
 void loop() {
   maintainMQTT();
 
-  // ĐỌC UART TỪ MASTER
-  int bytesReadThisLoop = 0;
-  while (Serial2.available() && bytesReadThisLoop < 256) {
-    char c = (char)Serial2.read();
-    bytesReadThisLoop++;
+  // 1. NHẬN SỰ KIỆN TỪ MẠCH 1 (CẢM BIẾN/SERVO HUB)
+  if (Serial2.available()) {
+    String msg = Serial2.readStringUntil('\n');
+    msg.trim();
     
-    if (c == '\n') {
-      lineBuf[linePos] = '\0';
-      processLine(lineBuf);
-      linePos = 0;
-    } else if (c != '\r') {
-      if (linePos < LINE_BUF_SIZE - 1) lineBuf[linePos++] = c;
-      else linePos = 0; 
+    if (msg == "CAR_IN") {
+      printLCD("Phat hien xe!", "Cho 5s chup...");
+      carInDetectedTime = millis();
+      isWaitingToCapture = true;
+    } 
+    else if (msg == "CAR_OUT") {
+      printLCD("Xe da di qua!", "Cho 3s dong...");
+      carOutDetectedTime = millis();
+      isWaitingToClose = true;
     }
+    else if (msg.startsWith("DIST:")) {
+      // Nhận dữ liệu cảm biến: DIST:15.2,20.5
+      String data = msg.substring(5);
+      int commaIndex = data.indexOf(',');
+      if (commaIndex > 0) {
+        String d1 = data.substring(0, commaIndex);
+        String d2 = data.substring(commaIndex + 1);
+        
+        Serial.println(">> [LIVE] CB1: " + d1 + "cm | CB2: " + d2 + "cm");
+        
+        // Nếu không có sự kiện gì đang chờ, hiển thị lên LCD cho trực quan
+        if (!isWaitingToCapture && !isWaitingToClose) {
+          lcd.setCursor(0, 1);
+          lcd.print("T1:" + String(d1.toInt()) + "cm T2:" + String(d2.toInt()) + "cm  ");
+        }
+      }
+    }
+  }
+
+  // 2. XỬ LÝ THỜI GIAN CHỜ CHỤP ẢNH (5 GIÂY)
+  if (isWaitingToCapture && (millis() - carInDetectedTime >= 5000)) {
+    isWaitingToCapture = false;
+    printLCD("Dang chup anh...", "Gui len Python");
+    
+    // Đánh thức Python chụp ảnh
+    if (mqttClient.connected()) {
+      mqttClient.publish("iot_thanglong/trigger", "{\"action\":\"capture\"}");
+    }
+  }
+
+  // 3. XỬ LÝ THỜI GIAN CHỜ ĐÓNG CỔNG (3 GIÂY)
+  if (isWaitingToClose && (millis() - carOutDetectedTime >= 3000)) {
+    isWaitingToClose = false;
+    printLCD("Đong cong...", "He thong SS");
+    
+    // Ra lệnh cho Mạch 1 đóng cổng
+    Serial2.println("CLOSE");
   }
 }

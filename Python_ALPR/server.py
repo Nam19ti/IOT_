@@ -71,10 +71,6 @@ def create_app(controller):
             controller.config.set('gemini_api_key', d['api_key'])
             if controller.ai_engine:
                 controller.ai_engine._init_gemini(d['api_key'])
-        if 'tb_token' in d:
-            controller.config.set('tb_token', d['tb_token'])
-            if controller.cloud:
-                controller.cloud.set_tb_token(d['tb_token'])
             
         return jsonify({"success": True})
 

@@ -3,18 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IOT Thăng Long - Hệ Thống Phạt Nguội</title>
+    <title>Trạm Thu Phí ETC Thăng Long</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
-            --primary: #00d2ff;
-            --secondary: #3a7bd5;
+            --primary: #10b981; /* Green for ETC */
+            --secondary: #059669;
             --bg: #0f172a;
             --glass-bg: rgba(30, 41, 59, 0.7);
             --glass-border: rgba(255, 255, 255, 0.1);
             --danger: #ef4444;
-            --success: #10b981;
+            --warning: #f59e0b;
         }
 
         body {
@@ -23,8 +22,8 @@
             font-family: 'Inter', sans-serif;
             background: var(--bg);
             background-image: 
-                radial-gradient(at 0% 0%, rgba(58, 123, 213, 0.15) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(0, 210, 255, 0.1) 0px, transparent 50%);
+                radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(5, 150, 105, 0.1) 0px, transparent 50%);
             color: #fff;
             min-height: 100vh;
         }
@@ -75,7 +74,11 @@
 
         .card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 20px 40px rgba(0,210,255,0.1);
+            box-shadow: 0 20px 40px rgba(16, 185, 129, 0.1);
+        }
+        
+        .card.card-failed {
+            border: 1px solid rgba(239, 68, 68, 0.3);
         }
 
         .card img {
@@ -89,62 +92,31 @@
 
         .info {
             flex-grow: 1;
+            text-align: center;
         }
 
-        .plate-input-group {
+        .plate {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #f1f5f9;
+            letter-spacing: 2px;
             margin-bottom: 0.5rem;
-            display: flex;
-            align-items: center;
-        }
-
-        .plate-input {
             background: rgba(0,0,0,0.3);
             border: 1px solid var(--glass-border);
-            color: #f1f5f9;
-            font-size: 1.6rem;
-            font-weight: 800;
             padding: 0.5rem;
             border-radius: 6px;
-            width: 100%;
-            letter-spacing: 2px;
-            font-family: 'Inter', sans-serif;
-            text-align: center;
-            transition: border-color 0.2s;
-        }
-        
-        .plate-input:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 10px rgba(0, 210, 255, 0.3);
         }
 
-        .plate-input[readonly] {
-            background: transparent;
-            border-color: transparent;
-            cursor: default;
-        }
-
-        .edit-hint {
-            font-size: 0.75rem;
-            color: #94a3b8;
-            margin-bottom: 1rem;
-            text-align: center;
-            display: block;
-        }
-
-        .speed {
-            color: var(--danger);
-            font-weight: 600;
+        .balance {
             font-size: 1.2rem;
+            font-weight: 600;
             margin-bottom: 1rem;
-            text-align: center;
         }
 
         .date {
             color: #94a3b8;
             font-size: 0.9rem;
             margin-bottom: 1.5rem;
-            text-align: center;
         }
 
         .badge {
@@ -157,17 +129,12 @@
             align-self: flex-start;
         }
 
-        .badge.pending { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid #f59e0b; }
-        .badge.sent { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid #10b981; }
-        .badge.rejected { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid #ef4444; }
-
-        .actions {
-            display: flex;
-            gap: 1rem;
-        }
+        .badge.success { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid #10b981; }
+        .badge.failed { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid #ef4444; }
+        .badge.unregistered { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid #f59e0b; }
 
         button {
-            flex: 1;
+            width: 100%;
             padding: 0.75rem;
             border: none;
             border-radius: 8px;
@@ -177,25 +144,18 @@
             transition: all 0.2s;
         }
 
-        .btn-send {
+        .btn-email {
             background: linear-gradient(135deg, var(--secondary), var(--primary));
             color: white;
         }
+        .btn-email:hover { box-shadow: 0 0 15px rgba(16, 185, 129, 0.5); }
 
-        .btn-send:hover {
-            box-shadow: 0 0 15px rgba(0, 210, 255, 0.5);
-        }
-
-        .btn-reject {
-            background: rgba(239, 68, 68, 0.1);
-            color: #fca5a5;
-            border: 1px solid rgba(239, 68, 68, 0.3);
-        }
-
-        .btn-reject:hover {
+        .btn-warning {
             background: rgba(239, 68, 68, 0.2);
-            border-color: #ef4444;
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.5);
         }
+        .btn-warning:hover { background: rgba(239, 68, 68, 0.4); }
 
         .toast {
             position: fixed;
@@ -210,155 +170,115 @@
             transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             z-index: 1000;
         }
-
-        .toast.show {
-            transform: translateX(0);
-        }
+        .toast.show { transform: translateX(0); }
     </style>
 </head>
 <body>
 
     <header class="header">
-        <h1>Trung Tâm Phạt Nguội IOT Thăng Long</h1>
-        <p style="color: #94a3b8; margin-top: 0.5rem;">Hệ thống giám sát và phê duyệt tự động</p>
-        <div style="margin-top: 1rem;">
-            <button id="login-btn" onclick="handleAuthClick()" style="background: white; color: #333; display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: auto; padding: 0.5rem 1.5rem;">
-                <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" height="20" alt="Google">
-                Đăng nhập tài khoản Nhân viên
-            </button>
-            <span id="user-info" style="color: #6ee7b7; font-weight: 600; font-size: 1.1rem;"></span>
+        <h1>Hệ Thống Thu Phí Không Dừng ETC</h1>
+        <p style="color: #94a3b8; margin-top: 0.5rem;">Giám sát tự động 100% & Quản lý Ví điện tử VETC</p>
+        <div style="margin-top: 1rem; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+            <input type="email" id="adminEmail" placeholder="Email tổng đài (VD: vetc@gmail.com)" style="padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--glass-border); background: rgba(0,0,0,0.5); color: white; width: 250px;">
+            <input type="password" id="appPassword" placeholder="Mật khẩu ứng dụng (16 ký tự)" style="padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--glass-border); background: rgba(0,0,0,0.5); color: white; width: 250px;">
         </div>
     </header>
 
     <div class="container">
-        <div class="grid" id="violations-grid">
-            <!-- Thẻ xe sẽ được load qua JS -->
+        <h2 style="border-bottom: 1px solid var(--glass-border); padding-bottom: 1rem;">Lịch sử Giao dịch Gần đây</h2>
+        <div class="grid" id="transactions-grid">
+            <!-- Dữ liệu load qua JS -->
         </div>
     </div>
 
     <div id="toast" class="toast">Đã cập nhật thành công!</div>
 
     <script>
-        // --- GOOGLE OAUTH2 ---
-        let adminEmail = null;
-        let accessToken = null;
-        let tokenClient;
-
-        window.onload = function() {
-            tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: 'YOUR_GOOGLE_CLIENT_ID_HERE', // BẠN HÃY THAY MÃ CLIENT ID CỦA BẠN VÀO ĐÂY
-                scope: 'https://www.googleapis.com/auth/gmail.send email',
-                callback: (tokenResponse) => {
-                    if (tokenResponse && tokenResponse.access_token) {
-                        accessToken = tokenResponse.access_token;
-                        fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                            headers: { 'Authorization': 'Bearer ' + accessToken }
-                        })
-                        .then(res => res.json())
-                        .then(data => {
-                            adminEmail = data.email;
-                            document.getElementById('login-btn').style.display = 'none';
-                            document.getElementById('user-info').innerText = '👤 Đang đăng nhập: ' + adminEmail;
-                            showToast('Đăng nhập Google thành công! Đã có thể gửi thư.');
-                        });
-                    }
-                },
-            });
-        };
-
-        function handleAuthClick() {
-            if (tokenClient) {
-                tokenClient.requestAccessToken();
-            }
-        }
-        // ---------------------
-
-        async function fetchViolations() {
+        async function fetchTransactions() {
             try {
-                const res = await fetch('/api/violations');
+                const res = await fetch('/api/transactions');
                 const data = await res.json();
-                renderViolations(data);
+                renderTransactions(data);
             } catch (err) {
                 console.error('Lỗi lấy dữ liệu:', err);
             }
         }
 
-        function renderViolations(violations) {
-            const grid = document.getElementById('violations-grid');
+        function renderTransactions(transactions) {
+            const grid = document.getElementById('transactions-grid');
             grid.innerHTML = '';
 
-            if (violations.length === 0) {
-                grid.innerHTML = '<h3 style="grid-column: 1/-1; text-align:center; color:#94a3b8;">Không có dữ liệu vi phạm nào.</h3>';
+            if (transactions.length === 0) {
+                grid.innerHTML = '<h3 style="grid-column: 1/-1; text-align:center; color:#94a3b8;">Chưa có lượt xe qua trạm nào.</h3>';
                 return;
             }
 
-            violations.forEach(v => {
-                const date = new Date(v.timestamp).toLocaleString('vi-VN');
+            transactions.forEach(tx => {
+                const date = new Date(tx.timestamp).toLocaleString('vi-VN');
                 
                 let badgeClass = '';
                 let statusText = '';
-                if(v.status === 'pending') { badgeClass = 'pending'; statusText = 'Chờ Duyệt'; }
-                if(v.status === 'sent') { badgeClass = 'sent'; statusText = 'Đã Gửi Phạt'; }
-                if(v.status === 'rejected') { badgeClass = 'rejected'; statusText = 'Đã Hủy'; }
+                let btnHtml = '';
 
-                const isPending = v.status === 'pending';
+                if(tx.status === 'success') { 
+                    badgeClass = 'success'; 
+                    statusText = 'Đã Trừ Tiền (Qua Trạm)'; 
+                    btnHtml = `<button class="btn-email" onclick="sendEmail('${tx._id}')">Gửi Biên Lai Điện Tử</button>`;
+                } else if(tx.status === 'failed_insufficient_funds') { 
+                    badgeClass = 'failed'; 
+                    statusText = 'Từ Chối (Hết Tiền)'; 
+                    btnHtml = `<button class="btn-warning" onclick="sendEmail('${tx._id}')">Gửi Cảnh Báo Nạp Tiền</button>`;
+                } else { 
+                    badgeClass = 'unregistered'; 
+                    statusText = 'Xe Lạ (Chưa Đăng Ký ETC)'; 
+                }
 
                 const card = document.createElement('div');
-                card.className = 'card';
+                card.className = `card ${tx.status.includes('failed') ? 'card-failed' : ''}`;
                 card.innerHTML = `
                     <div class="badge ${badgeClass}">${statusText}</div>
-                    <img src="${v.image_url}" alt="Bằng chứng" onerror="this.src='https://via.placeholder.com/600x400/1e293b/fff?text=No+Image'">
+                    <img src="${tx.image_url}" alt="Bằng chứng" onerror="this.src='https://via.placeholder.com/600x400/1e293b/fff?text=No+Image'">
+                    
                     <div class="info">
-                        <div class="plate-input-group">
-                            <input type="text" class="plate-input" id="plate-${v._id}" value="${v.plate}" ${!isPending ? 'readonly' : ''} />
+                        <div class="plate">${tx.plate}</div>
+                        
+                        <div style="background: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 8px; margin-bottom: 1rem;">
+                            <div style="color: #6ee7b7; font-weight: 600; font-size: 1rem;">👤 ${tx.owner_name}</div>
+                            <div style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 0.5rem;">📧 ${tx.owner_email}</div>
+                            ${tx.status !== 'failed_unregistered' ? 
+                                `<div class="balance" style="color: ${tx.balance < 35000 ? 'var(--danger)' : 'var(--primary)'}">
+                                    Ví ETC: ${tx.balance.toLocaleString()}đ
+                                </div>` : ''
+                            }
                         </div>
-                        ${isPending ? '<span class="edit-hint">(Có thể sửa biển số nếu AI đọc sai)</span>' : ''}
-                        <div class="speed">Tốc độ: ${v.speed} km/h</div>
-                        <div class="date">${date}</div>
+                        <div class="date">Thời gian: ${date}</div>
                     </div>
-                    ${isPending ? `
-                    <div class="actions">
-                        <button class="btn-reject" onclick="handleAction('${v._id}', 'reject')">Xóa Bỏ</button>
-                        <button class="btn-send" onclick="handleAction('${v._id}', 'send')">Gửi Phạt Ngay</button>
-                    </div>
-                    ` : ''}
+                    ${btnHtml}
                 `;
                 grid.appendChild(card);
             });
         }
 
-        async function handleAction(id, action) {
-            try {
-                let bodyData = {};
-                // Trích xuất biển số mới từ ô input nếu là hành động duyệt gửi phạt
-                if (action === 'send') {
-                    if (!accessToken || !adminEmail) {
-                        showToast("Vui lòng Đăng nhập Google ở góc trên trước khi gửi!");
-                        return;
-                    }
-                    bodyData.admin_email = adminEmail;
-                    bodyData.access_token = accessToken;
-                    
-                    const plateInput = document.getElementById(`plate-${id}`);
-                    if (plateInput) {
-                        bodyData.plate = plateInput.value.trim().toUpperCase();
-                        if(bodyData.plate === "") {
-                            showToast('Vui lòng nhập biển số hợp lệ!');
-                            return;
-                        }
-                    }
-                }
+        async function sendEmail(id) {
+            const emailInput = document.getElementById('adminEmail').value.trim();
+            const passInput = document.getElementById('appPassword').value.trim();
+            
+            if (!emailInput || !passInput) {
+                showToast("Vui lòng nhập Email tổng đài và Mật khẩu ứng dụng ở phía trên!");
+                return;
+            }
 
-                const res = await fetch(`/api/violations/${id}/${action}`, { 
+            try {
+                showToast("Đang gửi Email...");
+                const res = await fetch(`/api/transactions/${id}/send-email`, { 
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(bodyData)
+                    body: JSON.stringify({ admin_email: emailInput, app_password: passInput })
                 });
                 const data = await res.json();
                 
                 if (data.success) {
                     showToast(data.message);
-                    fetchViolations(); // Reload
                 } else {
                     showToast('Lỗi: ' + data.error);
                 }
@@ -374,8 +294,9 @@
             setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        // Tự động load dữ liệu
-        fetchViolations();
+        // Tự động load dữ liệu liên tục mỗi 3 giây (Real-time dashboard)
+        fetchTransactions();
+        setInterval(fetchTransactions, 3000);
     </script>
 </body>
 </html>

@@ -4,9 +4,10 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const path = require('path');
+const fs = require('fs');
 
 const Vehicle = require('./models/Vehicle');
-const Violation = require('./models/Violation');
+const Transaction = require('./models/Transaction');
 
 const app = express();
 app.use(cors());
@@ -22,134 +23,209 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ Đã kết nối MongoDB'))
   .catch(err => console.error('❌ Lỗi kết nối MongoDB:', err));
 
-// Không sử dụng cấu hình tĩnh .env cũ nữa
-// Sẽ khởi tạo động Nodemailer mỗi khi gọi Gửi Phạt thông qua OAuth2
+const TOLL_FEE = 35000; // Giá vé qua trạm ETC
 
-// Hàm gửi email phạt nguội bằng OAuth2
-async function sendPenaltyEmail(vehicle, violation, admin_email, access_token) {
+// ==========================================
+// TỰ ĐỘNG THU PHÍ TỪ FIREBASE QUEUE
+// ==========================================
+async function processFirebaseQueue() {
+    const firebaseUrl = process.env.FIREBASE_URL;
+    if (!firebaseUrl) return;
+
+    const baseUrl = firebaseUrl.endsWith('/') ? firebaseUrl : firebaseUrl + '/';
+
+    try {
+        const res = await fetch(`${baseUrl}queue.json`);
+        const data = await res.json();
+
+        if (data) {
+            for (const [key, carEvent] of Object.entries(data)) {
+                console.log(`\n🚗 Đã nhận tín hiệu xe qua trạm: Biển số ${carEvent.plate}`);
+                
+                let imageUrl = '/violations/no_image.jpg';
+
+                // Giai ma Base64 -> Anh .jpg de luu vao o cung
+                if (carEvent.image_base64) {
+                    const base64Data = carEvent.image_base64.replace(/^data:image\/jpeg;base64,/, "");
+                    const fileName = `${carEvent.plate}_${Date.now()}.jpg`;
+                    const filePath = path.join(__dirname, process.env.PYTHON_VIOLATIONS_DIR, fileName);
+                    
+                    const dirPath = path.dirname(filePath);
+                    if (!fs.existsSync(dirPath)){
+                        fs.mkdirSync(dirPath, { recursive: true });
+                    }
+                    fs.writeFileSync(filePath, base64Data, 'base64');
+                    imageUrl = `/violations/${fileName}`;
+                }
+
+                // 1. Kiểm tra xe trong hệ thống ETC
+                const vehicle = await Vehicle.findOne({ plate: carEvent.plate });
+                let status = 'success';
+
+                if (!vehicle) {
+                    console.log(`❌ Xe ${carEvent.plate} chưa đăng ký ETC!`);
+                    status = 'failed_unregistered';
+                } else if (vehicle.balance < TOLL_FEE) {
+                    console.log(`❌ Xe ${carEvent.plate} không đủ số dư (Còn: ${vehicle.balance}đ)!`);
+                    status = 'failed_insufficient_funds';
+                } else {
+                    // Trừ tiền
+                    vehicle.balance -= TOLL_FEE;
+                    await vehicle.save();
+                    console.log(`✅ Đã trừ ${TOLL_FEE}đ xe ${carEvent.plate}. Số dư mới: ${vehicle.balance}đ`);
+                }
+
+                // Luu vao Lịch sử giao dịch (MongoDB)
+                const newTx = new Transaction({
+                    plate: carEvent.plate,
+                    amount: TOLL_FEE,
+                    image_url: imageUrl,
+                    timestamp: carEvent.timestamp || Date.now(),
+                    status: status
+                });
+                await newTx.save();
+
+                // Xoa ban ghi khoi Hang doi (Queue) Firebase sau khi da xu ly xong
+                await fetch(`${baseUrl}queue/${key}.json`, { method: 'DELETE' });
+            }
+        }
+    } catch (error) {
+        console.error('❌ Lỗi kết nối Firebase Queue:', error.message);
+    }
+}
+
+// Quét (Pull) Firebase mỗi 3 giây
+setInterval(processFirebaseQueue, 3000);
+
+
+// ==========================================
+// GỬI EMAIL THÔNG BÁO (NHẮC NẠP TIỀN HOẶC HÓA ĐƠN)
+// ==========================================
+async function sendETCEmail(vehicle, transaction, admin_email, app_password) {
     const transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
-            type: 'OAuth2',
             user: admin_email,
-            accessToken: access_token
+            pass: app_password
         }
     });
+
+    const imageFileName = transaction.image_url.split('/').pop();
+    const imageFilePath = path.join(__dirname, process.env.PYTHON_VIOLATIONS_DIR, imageFileName);
+
+    let subject = "";
+    let htmlContent = "";
+
+    if (transaction.status === 'success') {
+        subject = `[VETC] Hóa đơn điện tử qua trạm - Biển số ${vehicle.plate}`;
+        htmlContent = `
+            <h2>Kính gửi ông/bà ${vehicle.owner_name},</h2>
+            <p>Hệ thống VETC thông báo quý khách vừa qua trạm thu phí thành công.</p>
+            <ul>
+                <li><strong>Biển số:</strong> ${vehicle.plate}</li>
+                <li><strong>Số tiền bị trừ:</strong> -${transaction.amount.toLocaleString()} VNĐ</li>
+                <li><strong>Số dư còn lại:</strong> ${vehicle.balance.toLocaleString()} VNĐ</li>
+                <li><strong>Thời gian qua trạm:</strong> ${new Date(transaction.timestamp).toLocaleString('vi-VN')}</li>
+            </ul>
+            <p><strong>Hình ảnh xe qua trạm:</strong></p>
+            <img src="cid:car_image" alt="Ảnh xe" style="max-width: 600px; border: 2px solid #10b981;"/>
+            <br/>
+            <p>Trân trọng,</p>
+            <p>Trung tâm Điều hành ETC Thăng Long</p>
+        `;
+    } else {
+        subject = `[VETC CẢNH BÁO] Tài khoản không đủ tiền - Biển số ${vehicle.plate}`;
+        htmlContent = `
+            <h2>Kính gửi ông/bà ${vehicle.owner_name},</h2>
+            <p>Hệ thống VETC thông báo quý khách vừa qua trạm thu phí nhưng <strong>Tài khoản không đủ số dư</strong>.</p>
+            <ul>
+                <li><strong>Biển số:</strong> ${vehicle.plate}</li>
+                <li><strong>Số dư hiện tại:</strong> ${vehicle.balance.toLocaleString()} VNĐ (Cần tối thiểu ${transaction.amount.toLocaleString()} VNĐ)</li>
+                <li><strong>Thời gian qua trạm:</strong> ${new Date(transaction.timestamp).toLocaleString('vi-VN')}</li>
+            </ul>
+            <p><strong>Hình ảnh xe qua trạm:</strong></p>
+            <img src="cid:car_image" alt="Ảnh xe" style="max-width: 600px; border: 2px solid #ef4444;"/>
+            <br/>
+            <p>Vui lòng nạp thêm tiền vào tài khoản VETC để tiếp tục sử dụng dịch vụ và thanh toán dư nợ.</p>
+            <p>Trân trọng,</p>
+            <p>Trung tâm Điều hành ETC Thăng Long</p>
+        `;
+    }
 
     const mailOptions = {
         from: admin_email,
         to: vehicle.owner_email,
-        subject: `[Thông báo vi phạm giao thông] - Biển số ${vehicle.plate}`,
-        html: `
-            <h2>Kính gửi ông/bà ${vehicle.owner_name},</h2>
-            <p>Hệ thống giám sát giao thông ghi nhận phương tiện của quý khách đã có hành vi vi phạm vượt quá tốc độ.</p>
-            <ul>
-                <li><strong>Biển số:</strong> ${vehicle.plate}</li>
-                <li><strong>Tốc độ đo được:</strong> ${violation.speed} km/h</li>
-                <li><strong>Thời gian vi phạm:</strong> ${new Date(violation.timestamp).toLocaleString('vi-VN')}</li>
-            </ul>
-            <p><strong>Hình ảnh bằng chứng:</strong></p>
-            <img src="${violation.image_url}" alt="Ảnh vi phạm" style="max-width: 600px; border: 2px solid red;"/>
-            <br/>
-            <p>Đề nghị ông/bà tới cơ quan chức năng để giải quyết nộp phạt theo quy định.</p>
-            <p>Trân trọng,</p>
-            <p>Hệ thống giám sát giao thông thông minh IOT Thăng Long</p>
-        `
+        subject: subject,
+        html: htmlContent,
+        attachments: [
+            {
+                filename: imageFileName,
+                path: imageFilePath,
+                cid: 'car_image'
+            }
+        ]
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`📧 Đã gửi email phạt nguội thành công tới: ${vehicle.owner_email}`);
+    console.log(`📧 Đã gửi email ETC thành công tới: ${vehicle.owner_email}`);
 }
 
+
 // ==========================================
-// API ENDPOINTS
+// API ENDPOINTS (Dành cho Web Dashboard)
 // ==========================================
 
-// Nhận dữ liệu từ Python và Đưa vào hàng đợi chờ duyệt (pending)
-app.post('/api/violation', async (req, res) => {
+// Lấy danh sách giao dịch
+app.get('/api/transactions', async (req, res) => {
     try {
-        const { car_id, plate, speed, direction, image, timestamp } = req.body;
-        console.log(`\n🚨 Có vi phạm mới: Biển ${plate}, Tốc độ ${speed} km/h. Đang chờ duyệt...`);
+        const transactions = await Transaction.find().sort({ timestamp: -1 }).lean();
+        
+        // Tra cứu thông tin chủ xe cho từng giao dịch
+        const enrichedTxs = await Promise.all(transactions.map(async (tx) => {
+            const vehicle = await Vehicle.findOne({ plate: tx.plate }).lean();
+            if (vehicle) {
+                tx.owner_name = vehicle.owner_name;
+                tx.owner_email = vehicle.owner_email;
+                tx.balance = vehicle.balance;
+            } else {
+                tx.owner_name = "Xe chưa đăng ký";
+                tx.owner_email = "Không có email";
+                tx.balance = 0;
+            }
+            return tx;
+        }));
 
-        const imageUrl = `${process.env.PI_LOCAL_IP}/violations/${image}`;
-
-        const newViolation = new Violation({
-            plate,
-            speed,
-            direction,
-            image_url: imageUrl,
-            timestamp: timestamp || Date.now(),
-            status: 'pending' // Chờ con người duyệt
-        });
-        await newViolation.save();
-
-        res.status(200).json({ success: true, message: 'Đã đưa vào danh sách chờ duyệt.' });
-    } catch (error) {
-        console.error('❌ Lỗi xử lý vi phạm:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// Lấy danh sách vi phạm (để render lên Dashboard)
-app.get('/api/violations', async (req, res) => {
-    try {
-        const violations = await Violation.find().sort({ timestamp: -1 });
-        res.json(violations);
+        res.json(enrichedTxs);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// Duyệt và Gửi Phạt
-app.post('/api/violations/:id/send', async (req, res) => {
+// Gửi Email thông báo
+app.post('/api/transactions/:id/send-email', async (req, res) => {
     try {
-        const { plate, admin_email, access_token } = req.body;
-        const violation = await Violation.findById(req.params.id);
-        if (!violation) return res.status(404).json({ error: 'Không tìm thấy biên bản' });
+        const { admin_email, app_password } = req.body;
+        const tx = await Transaction.findById(req.params.id);
+        if (!tx) return res.status(404).json({ error: 'Không tìm thấy giao dịch' });
 
-        // Cập nhật biển số nếu người dùng có sửa chữa trên giao diện
-        if (plate && plate !== violation.plate) {
-            console.log(`✏️ Biển số đã được sửa tay từ ${violation.plate} thành ${plate}`);
-            violation.plate = plate;
-        }
-
-        const vehicle = await Vehicle.findOne({ plate: violation.plate });
+        const vehicle = await Vehicle.findOne({ plate: tx.plate });
         if (!vehicle) {
-            return res.status(400).json({ error: `Không tìm thấy thông tin chủ xe biển ${violation.plate} trong CSDL` });
+            return res.status(400).json({ error: `Không tìm thấy thông tin chủ xe biển ${tx.plate}` });
         }
 
-        if (!admin_email || !access_token) {
-            return res.status(401).json({ error: 'Vui lòng Đăng nhập Google trước khi gửi thư phạt!' });
+        if (!admin_email || !app_password) {
+            return res.status(401).json({ error: 'Vui lòng điền Email và Mật khẩu ứng dụng!' });
         }
 
-        await sendPenaltyEmail(vehicle, violation, admin_email, access_token);
-        violation.status = 'sent';
-        await violation.save();
-
-        res.json({ success: true, message: 'Đã cập nhật và gửi phạt nguội thành công!' });
+        await sendETCEmail(vehicle, tx, admin_email, app_password);
+        res.json({ success: true, message: 'Đã gửi Email thông báo thành công tới ' + vehicle.owner_email });
     } catch (error) {
-        console.error('❌ Lỗi gửi phạt:', error);
-        res.status(500).json({ error: 'Lỗi máy chủ khi gửi mail' });
-    }
-});
-
-// Hủy/Xóa Biên Bản
-app.post('/api/violations/:id/reject', async (req, res) => {
-    try {
-        const violation = await Violation.findById(req.params.id);
-        if (!violation) return res.status(404).json({ error: 'Không tìm thấy biên bản' });
-
-        violation.status = 'rejected';
-        await violation.save();
-
-        res.json({ success: true, message: 'Đã hủy biên bản vi phạm.' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('❌ Lỗi gửi email:', error);
+        res.status(500).json({ error: 'Lỗi máy chủ khi gửi mail: Kiểm tra lại Mật khẩu ứng dụng' });
     }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Node.js Backend Server đang chạy tại http://localhost:${PORT}`);
-    console.log(`🌍 Mở trình duyệt tại http://localhost:${PORT} để vào Dashboard`);
+    console.log(`🚀 Node.js Backend Server (VETC) đang chạy tại http://localhost:${PORT}`);
 });

@@ -17,7 +17,7 @@ class Config:
         self.data = {
             "ip_camera_url": "http://192.168.1.100:8080/photo.jpg",
             "gemini_api_key": "",
-            "tb_token": ""
+            "firebase_url": ""
         }
         self.load()
 
@@ -82,8 +82,7 @@ class SystemController:
         if not self.ai_ready:
             p(f"    -> [CANH BAO] AI chua san sang. Chi luu toc do {speed}km/h.")
             if self.cloud:
-                self.cloud.push_thingsboard(speed, "AI loading...")
-                self.cloud.push_nodejs(car_id, speed, direction, "AI loading...")
+                self.cloud.push_firebase(car_id, speed, direction, "AI loading...")
             if self.mqtt:
                 self.mqtt.publish_plate(car_id, speed, direction, "AI loading...")
             return
@@ -127,10 +126,20 @@ class SystemController:
                 image_filename = f"{plate}_{ts}.jpg"
                 img_path = os.path.join("violations", image_filename)
                 
-                # Ve BBox len anh (Kiem tra Numpy an toan)
+                # Ve thong tin vi pham len anh (Watermark bang chung)
                 if best_frame is not None and best_frame.size > 0:
-                    cv2.imwrite(img_path, best_frame)
+                    # Tao nen den nhat de chu de doc
+                    overlay = best_frame.copy()
+                    cv2.rectangle(overlay, (0, 0), (450, 110), (0, 0, 0), -1)
+                    cv2.addWeighted(overlay, 0.6, best_frame, 0.4, 0, best_frame)
                     
+                    # In chu
+                    time_str = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                    cv2.putText(best_frame, f"TRAM THU PHI ETC", (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 165, 255), 2) # Cam (Cam nhat)
+                    cv2.putText(best_frame, f"THOI GIAN: {time_str}", (15, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2) # Vang
+                    cv2.putText(best_frame, f"BIEN SO: {plate}", (15, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2) # Xanh
+                    
+                    cv2.imwrite(img_path, best_frame)
             elapsed = round(time.time() - start_t, 2)
             self.last_process_time = elapsed
             
@@ -148,8 +157,7 @@ class SystemController:
             
             # Day len Cloud
             if self.cloud:
-                self.cloud.push_thingsboard(speed, plate, best_frame)
-                self.cloud.push_nodejs(car_id, speed, direction, plate, image_filename)
+                self.cloud.push_firebase(car_id, speed, direction, plate, best_frame)
                 
             # Tra ve MQTT
             if self.mqtt:
@@ -158,6 +166,6 @@ class SystemController:
         except Exception as e:
             p(f"    -> [LOI NGHIEM TRONG]: {e}")
             if self.cloud:
-                self.cloud.push_thingsboard(speed, "Loi Camera")
+                self.cloud.push_firebase(car_id, speed, direction, "Loi Camera")
             if self.mqtt:
                 self.mqtt.publish_plate(car_id, speed, direction, "Loi Camera")
