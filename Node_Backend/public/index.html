@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IOT Thăng Long - Hệ Thống Phạt Nguội</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
             --primary: #00d2ff;
@@ -220,6 +221,13 @@
     <header class="header">
         <h1>Trung Tâm Phạt Nguội IOT Thăng Long</h1>
         <p style="color: #94a3b8; margin-top: 0.5rem;">Hệ thống giám sát và phê duyệt tự động</p>
+        <div style="margin-top: 1rem;">
+            <button id="login-btn" onclick="handleAuthClick()" style="background: white; color: #333; display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: auto; padding: 0.5rem 1.5rem;">
+                <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" height="20" alt="Google">
+                Đăng nhập tài khoản Nhân viên
+            </button>
+            <span id="user-info" style="color: #6ee7b7; font-weight: 600; font-size: 1.1rem;"></span>
+        </div>
     </header>
 
     <div class="container">
@@ -231,6 +239,40 @@
     <div id="toast" class="toast">Đã cập nhật thành công!</div>
 
     <script>
+        // --- GOOGLE OAUTH2 ---
+        let adminEmail = null;
+        let accessToken = null;
+        let tokenClient;
+
+        window.onload = function() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: 'YOUR_GOOGLE_CLIENT_ID_HERE', // BẠN HÃY THAY MÃ CLIENT ID CỦA BẠN VÀO ĐÂY
+                scope: 'https://www.googleapis.com/auth/gmail.send email',
+                callback: (tokenResponse) => {
+                    if (tokenResponse && tokenResponse.access_token) {
+                        accessToken = tokenResponse.access_token;
+                        fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                            headers: { 'Authorization': 'Bearer ' + accessToken }
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            adminEmail = data.email;
+                            document.getElementById('login-btn').style.display = 'none';
+                            document.getElementById('user-info').innerText = '👤 Đang đăng nhập: ' + adminEmail;
+                            showToast('Đăng nhập Google thành công! Đã có thể gửi thư.');
+                        });
+                    }
+                },
+            });
+        };
+
+        function handleAuthClick() {
+            if (tokenClient) {
+                tokenClient.requestAccessToken();
+            }
+        }
+        // ---------------------
+
         async function fetchViolations() {
             try {
                 const res = await fetch('/api/violations');
@@ -290,6 +332,13 @@
                 let bodyData = {};
                 // Trích xuất biển số mới từ ô input nếu là hành động duyệt gửi phạt
                 if (action === 'send') {
+                    if (!accessToken || !adminEmail) {
+                        showToast("Vui lòng Đăng nhập Google ở góc trên trước khi gửi!");
+                        return;
+                    }
+                    bodyData.admin_email = adminEmail;
+                    bodyData.access_token = accessToken;
+                    
                     const plateInput = document.getElementById(`plate-${id}`);
                     if (plateInput) {
                         bodyData.plate = plateInput.value.trim().toUpperCase();

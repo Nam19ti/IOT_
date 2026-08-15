@@ -22,19 +22,22 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ Đã kết nối MongoDB'))
   .catch(err => console.error('❌ Lỗi kết nối MongoDB:', err));
 
-// Cấu hình Nodemailer
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    }
-});
+// Không sử dụng cấu hình tĩnh .env cũ nữa
+// Sẽ khởi tạo động Nodemailer mỗi khi gọi Gửi Phạt thông qua OAuth2
 
-// Hàm gửi email phạt nguội
-async function sendPenaltyEmail(vehicle, violation) {
+// Hàm gửi email phạt nguội bằng OAuth2
+async function sendPenaltyEmail(vehicle, violation, admin_email, access_token) {
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            type: 'OAuth2',
+            user: admin_email,
+            accessToken: access_token
+        }
+    });
+
     const mailOptions = {
-        from: process.env.EMAIL_USER,
+        from: admin_email,
         to: vehicle.owner_email,
         subject: `[Thông báo vi phạm giao thông] - Biển số ${vehicle.plate}`,
         html: `
@@ -100,7 +103,7 @@ app.get('/api/violations', async (req, res) => {
 // Duyệt và Gửi Phạt
 app.post('/api/violations/:id/send', async (req, res) => {
     try {
-        const { plate } = req.body;
+        const { plate, admin_email, access_token } = req.body;
         const violation = await Violation.findById(req.params.id);
         if (!violation) return res.status(404).json({ error: 'Không tìm thấy biên bản' });
 
@@ -115,7 +118,11 @@ app.post('/api/violations/:id/send', async (req, res) => {
             return res.status(400).json({ error: `Không tìm thấy thông tin chủ xe biển ${violation.plate} trong CSDL` });
         }
 
-        await sendPenaltyEmail(vehicle, violation);
+        if (!admin_email || !access_token) {
+            return res.status(401).json({ error: 'Vui lòng Đăng nhập Google trước khi gửi thư phạt!' });
+        }
+
+        await sendPenaltyEmail(vehicle, violation, admin_email, access_token);
         violation.status = 'sent';
         await violation.save();
 

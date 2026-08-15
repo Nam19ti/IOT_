@@ -1,1 +1,6 @@
-{"ip_camera_url": "http://192.168.1.21:8080/photo.jpg"}
+{
+    "ip_camera_url": "http://192.168.1.21:8080/photo.jpg",
+    "gemini_api_key": "",
+    "tb_token": "GkUmbnN2vDPBljtNCKfo",
+    "ai_mode": "easyocr"
+}
