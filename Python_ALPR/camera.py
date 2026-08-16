@@ -9,9 +9,14 @@ class CameraClient:
         self.set_url(url)
 
     def set_url(self, new_url):
-        self.url = new_url
-        if self.url and "/photo.jpg" not in self.url:
-            self.url = self.url.rstrip("/") + "/photo.jpg"
+        self.url = new_url.strip() if new_url else ""
+        if self.url:
+            # Chi tu dong them neu nguoi dung quen them duong dan anh
+            if not self.url.endswith(".jpg"):
+                if self.url.endswith("/"):
+                    self.url += "photo.jpg"
+                else:
+                    self.url += "/photo.jpg"
         p(f"[CAMERA] Da cap nhat URL: {self.url}")
 
     def fetch_image(self):

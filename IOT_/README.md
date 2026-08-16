@@ -1,58 +1,25 @@
-# Hệ thống đo tốc độ với ESP32 và Cảm biến siêu âm
+﻿# MẠCH 1: ESP32 MASTER (ĐIỀU KHIỂN CỔNG VÀ CẢM BIẾN)
 
-Dự án này sử dụng ESP32 cùng 2 cảm biến siêu âm (HC-SR04) để tính toán tốc độ của phương tiện, hiển thị lên màn hình LCD I2C và truyền thông tin vận tốc qua chuẩn giao tiếp I2C cho một ESP32 khác.
+Dự án Trạm Thu Phí VETC - Mạch ESP32 Master chịu trách nhiệm đọc tín hiệu từ 2 cảm biến siêu âm (HC-SR04) để phát hiện xe, tự động mở cổng bằng Servo và đảm bảo tính năng **Zero-Crash** (chống sập barie vào xe).
+
+## Chức Năng Chính
+- **Đo khoảng cách nền tự động:** Khi mới khởi động, mạch sẽ quét khoảng cách tới bức tường/vật cản đối diện để lấy mốc (baseline). Bất kỳ vật gì đi ngang qua làm giảm khoảng cách sẽ được coi là xe.
+- **Bảo vệ chống kẹp xe (Zero-Crash):** Sử dụng cờ trạng thái kép `carAtGate` và đọc lại cảm biến trước khi đóng cổng để tuyệt đối không sập cần barie vào kính xe.
+- **Còi báo động:** Tít tít khi mở cổng và hú còi khi có lỗi.
+- **Giao tiếp:** Gửi dữ liệu sự kiện (Xe vào, Lỗi...) sang Mạch 2 qua UART.
 
 ## Sơ đồ đấu nối
 
-Dưới đây là sơ đồ đấu nối giữa ESP32 (Master) và các linh kiện ngoại vi:
-
-```mermaid
-graph LR
-    subgraph ESP32_Master
-        ESP32[ESP32 Board - Master]
-    end
-
-    subgraph Cảm biến
-        CB1[Cảm biến Siêu âm 1<br/>Bên trái]
-        CB2[Cảm biến Siêu âm 2<br/>Bên phải]
-    end
-
-    subgraph Hiển thị & Giao tiếp
-        LCD[Màn hình LCD I2C<br/>16x2]
-        BTN_START[Nút nhấn Bắt đầu]
-        ESP32_Slave[ESP32 Board - Slave<br/>Địa chỉ: 0x08]
-    end
-
-    %% Kết nối CB1
-    ESP32 -- GPIO 15 -->|Trig| CB1
-    CB1 -- Echo -->|GPIO 4| ESP32
-
-    %% Kết nối CB2
-    ESP32 -- GPIO 18 -->|Trig| CB2
-    CB2 -- Echo -->|GPIO 19| ESP32
-
-    %% Kết nối LCD & Slave qua I2C
-    ESP32 -- GPIO 22 -->|SCL| LCD
-    ESP32 -- GPIO 21 -->|SDA| LCD
-    ESP32 -- GPIO 22 -->|SCL| ESP32_Slave
-    ESP32 -- GPIO 21 -->|SDA| ESP32_Slave
-    
-    %% Kết nối Nút bấm
-    BTN_START -- Nhấn kéo GND -->|GPIO 26| ESP32
-```
-
-### Bảng tóm tắt các chân GPIO
-
 | Linh kiện | Chân trên Linh kiện | Chân trên ESP32 | Ghi chú |
 | :--- | :--- | :--- | :--- |
-| **Cảm biến 1** | TRIG | `GPIO 15` | Phát xung siêu âm |
-| | ECHO | `GPIO 4` | Nhận tín hiệu phản hồi |
-| **Cảm biến 2** | TRIG | `GPIO 18` | Phát xung siêu âm |
-| | ECHO | `GPIO 19` | Nhận tín hiệu phản hồi |
-| **LCD I2C 16x2**| SDA | `GPIO 21` | I2C Data mặc định của ESP32 |
-| | SCL | `GPIO 22` | I2C Clock mặc định của ESP32 |
-| **ESP32 Slave**| SDA | `GPIO 21` | Chung bus I2C để nhận dữ liệu (Đ/c: `0x08`) |
-| | SCL | `GPIO 22` | Chung bus I2C để nhận dữ liệu |
-| **Nút nhấn** | Bắt đầu / Dừng đo | `GPIO 26` | Kéo GND khi nhấn (Sử dụng INPUT_PULLUP) |
+| **Cảm biến 1 (Lối Vào)** | TRIG | `GPIO 13` | Phát xung |
+| | ECHO | `GPIO 12` | Nhận xung |
+| **Cảm biến 2 (Lối Ra)** | TRIG | `GPIO 5` | Phát xung |
+| | ECHO | `GPIO 18` | Nhận xung |
+| **Động Cơ Servo** | PWM | `GPIO 4` | Điều khiển Barie |
+| **Còi (Buzzer)** | VCC/IN | `GPIO 14` | Còi chip |
+| **Nút Nhấn Mở Cổng** | PIN | `GPIO 26` | Kéo GND khi nhấn (PULLUP) |
+| **Mạch 2 (IOT_2)** | RX2 | `GPIO 17 (TX2)` | Truyền UART |
+| | TX2 | `GPIO 16 (RX2)` | Nhận UART |
 
-*Lưu ý: Bạn phải nối chung chân GND giữa 2 mạch ESP32 nếu chúng dùng các nguồn điện khác nhau để bus I2C có thể hoạt động chính xác.*
+*Lưu ý: Mạch 1 và Mạch 2 phải được nối chung chân GND.*

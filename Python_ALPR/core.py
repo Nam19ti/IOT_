@@ -19,8 +19,7 @@ class Config:
         self.filename = filename
         self.data = {
             "ip_camera_url": "http://192.168.137.233/photo.jpg",
-            "iot2_ip": "192.168.137.199",
-            "firebase_url": "https://test-a2b8e-default-rtdb.firebaseio.com/"
+            "iot2_ip": "192.168.137.199"
         }
         self.load()
 

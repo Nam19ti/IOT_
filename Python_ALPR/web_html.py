@@ -1,4 +1,4 @@
-﻿def get_html(controller):
+def get_html(controller):
     return f"""<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -52,11 +52,8 @@
         .info-row {{ color: #94a3b8; font-size: 1rem; margin-bottom: 0.5rem; }}
         .info-row span {{ color: #f1f5f9; font-weight: 600; }}
 
-        /* === GRID 2 COT === */
-        .two-col {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }}
-        @media(max-width:900px) {{ .two-col {{ grid-template-columns: 1fr; }} }}
-
         /* === CAMERA === */
+        .cam-center-grid {{ display: grid; grid-template-columns: 1fr; max-width: 800px; margin: 0 auto; gap: 1.5rem; }}
         .cam-wrap {{ position: relative; border-radius: 12px; overflow: hidden;
                      background: #000; border: 1px solid var(--border); min-height: 200px;
                      display: flex; align-items: center; justify-content: center; }}
@@ -131,8 +128,8 @@
             </div>
         </div>
 
-        <!-- CAMERA + CAU HINH -->
-        <div class="two-col">
+        <!-- CAMERA ESP32-CAM -->
+        <div class="cam-center-grid">
             <div class="card">
                 <div class="card-title">&#127909; Camera ESP32-CAM</div>
                 <div class="cam-wrap">
@@ -149,26 +146,6 @@
                     </button>
                 </div>
                 <div id="ocr_result"></div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">&#9881; Cau hinh he thong</div>
-                <div class="form-row">
-                    <label>URL ESP32-CAM:</label>
-                    <input type="text" id="cam_url"
-                           value="{controller.config.get('ip_camera_url', 'http://192.168.137.233/photo.jpg')}"
-                           placeholder="http://192.168.137.233/photo.jpg">
-                </div>
-                <div class="form-row">
-                    <label>IP Mach 2 (IOT_2):</label>
-                    <input type="text" id="iot2_ip"
-                           value="{controller.config.get('iot2_ip', '192.168.137.199')}"
-                           placeholder="192.168.137.199">
-                </div>
-                <div class="btn-row">
-                    <button class="btn btn-green" onclick="saveSettings()">Luu Cau Hinh</button>
-                </div>
-                <div id="save_msg"></div>
             </div>
         </div>
 
@@ -198,27 +175,16 @@
     }}
 
     // ===================== SETTINGS =====================
-    function saveSettings() {{
-        const url   = document.getElementById('cam_url').value;
-        const iot2  = document.getElementById('iot2_ip').value;
-        fetch('/set_settings', {{
-            method:'POST', headers:{{'Content-Type':'application/json'}},
-            body: JSON.stringify({{ url, iot2_ip: iot2 }})
-        }}).then(r=>r.json()).then(d=>{{
-            document.getElementById('save_msg').innerText = d.success ? '✅ Da luu!' : '❌ Loi luu!';
-            setTimeout(()=>document.getElementById('save_msg').innerText='', 3000);
-        }});
-    }}
+    // IP tinh co dinh - khong can chinh trong web
+    const IOT2_IP = '192.168.137.199';
 
     // ===================== GATE CONTROL =====================
     function gate(path) {{
-        const ip = document.getElementById('iot2_ip').value;
-        if (!ip) {{ toast('⚠️ Chua nhap IP Mach 2!'); return; }}
         toast('Dang gui lenh...');
-        fetch('http://' + ip + path)
+        fetch('http://' + IOT2_IP + path)
             .then(r=>r.text())
             .then(txt=>toast('✅ ' + txt))
-            .catch(()=>toast('❌ Khong ket noi duoc Mach 2!'));
+            .catch(()=>toast('❌ Khong ket noi duoc Mach 2 (' + IOT2_IP + ')!'));
     }}
 
     // ===================== CAPTURE ONLY =====================

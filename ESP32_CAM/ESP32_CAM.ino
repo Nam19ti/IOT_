@@ -1,4 +1,4 @@
-﻿#include "esp_camera.h"
+#include "esp_camera.h"
 #include <WiFi.h>
 #include <WebServer.h>
 
@@ -53,6 +53,8 @@ void handlePhoto() {
   server.sendHeader("Content-Type", "image/jpeg");
   server.sendHeader("Content-Disposition", "inline; filename=capture.jpg");
   server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.setContentLength(fb->len);
+  server.send(200, "image/jpeg", "");
   server.sendContent((const char *)fb->buf, fb->len);
   esp_camera_fb_return(fb);
   Serial.printf(">> Da chup va gui anh (Size: %d bytes)\n", fb->len);

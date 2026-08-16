@@ -118,16 +118,6 @@ def create_app(controller):
             p(f"    -> [LOI TONG HOP]: {e}")
             return jsonify({"success": False, "error": str(e)})
 
-    @app.route('/set_settings', methods=['POST'])
-    def set_settings():
-        d = request.json
-        if 'url' in d:
-            controller.config.set('ip_camera_url', d['url'])
-            if controller.camera:
-                controller.camera.set_url(d['url'])
-        if 'iot2_ip' in d:
-            controller.config.set('iot2_ip', d['iot2_ip'])
-        return jsonify({"success": True})
 
     @app.route('/')
     def index():

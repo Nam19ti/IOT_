@@ -1,33 +1,24 @@
-# IOT_2 - Bộ nhận dữ liệu (I2C Slave)
+﻿# MẠCH 2: ESP32 SLAVE (GIAO TIẾP MẠNG LAN)
 
-Đây là chương trình dành cho mạch ESP32 thứ 2 đóng vai trò là I2C Slave. Mạch này có nhiệm vụ nhận dữ liệu vận tốc từ mạch ESP32 Master đo được và in ra Serial Monitor (hoặc dùng để phát triển thêm các tính năng khác).
+Dự án Trạm Thu Phí VETC - Mạch ESP32 Slave đóng vai trò làm Router / Cầu nối Mạng. Nó cung cấp giao diện Web nội bộ để Python Server hoặc trình duyệt có thể ra lệnh đóng mở cổng khẩn cấp, đồng thời gửi tín hiệu ngược lên máy chủ khi Mạch 1 phát hiện có xe.
 
-## Sơ đồ đấu nối cho mạch Slave
+## Chức Năng Chính
+- **Mạng LAN WiFi:** Kết nối tới WiFi cục bộ (`NONNET`) với địa chỉ IP tĩnh là `192.168.137.199`.
+- **Máy Chủ Web Nhúng:** Mở cổng 80 để lắng nghe các API:
+  - `/open_gate`: Mở tự động (Đóng sau 3s nếu xe qua)
+  - `/open_gate_manual`: Mở giữ mãi mãi
+  - `/close_gate`: Đóng khẩn cấp
+- **Bắn HTTP GET:** Khi nhận được tín hiệu "Có Xe" qua UART từ Mạch 1, Mạch 2 lập tức gửi HTTP GET tới `http://192.168.137.1:5000/trigger_capture` để yêu cầu máy tính chạy AI nhận diện biển số.
+- **Màn Hình LCD I2C:** Hiển thị trực tiếp thông báo hệ thống và IP mạng đang kết nối.
 
-Bạn chỉ cần kết nối 3 dây cơ bản giữa mạch ESP32 Master (Mạch đo tốc độ) và mạch ESP32 Slave (Mạch nhận):
+## Sơ đồ đấu nối
 
-```mermaid
-graph LR
-    subgraph Mạch đo tốc độ (Master)
-        Master[ESP32 Master]
-    end
-
-    subgraph Mạch nhận (Slave)
-        Slave[ESP32 Slave<br>Địa chỉ I2C: 0x08]
-    end
-
-    %% Kết nối 2 mạch
-    Master -- SDA (GPIO 21) --> Slave
-    Master -- SCL (GPIO 22) --> Slave
-    Master -- GND chung --> Slave
-```
-
-### Bảng cấu hình chân I2C (Mặc định của ESP32)
-
-| Tín hiệu | Chân trên Slave | Nối với Master | Ý nghĩa |
+| Linh kiện | Chân trên Linh kiện | Chân trên ESP32 | Ghi chú |
 | :--- | :--- | :--- | :--- |
-| **SDA** (Dữ liệu) | `GPIO 21` | `GPIO 21` (Master) | Đường truyền dữ liệu I2C |
-| **SCL** (Xung nhịp) | `GPIO 22` | `GPIO 22` (Master) | Đường đồng bộ xung nhịp I2C |
-| **GND** (Mass chung) | `GND` | `GND` (Master) | **Bắt buộc** phải nối chung GND nếu 2 mạch dùng 2 nguồn cấp điện khác nhau |
+| **Mạch 1 (IOT_)** | TX2 | `GPIO 16 (RX2)` | Nhận dữ liệu UART |
+| | RX2 | `GPIO 17 (TX2)` | Truyền lệnh điều khiển (Chưa dùng tới) |
+| **Màn Hình LCD 16x2** | SDA | `GPIO 21` | Bus I2C |
+| | SCL | `GPIO 22` | Bus I2C |
+| | VCC | `5V / VIN` | Cấp nguồn cho LCD |
 
-*Lưu ý: Bạn có thể cắm trực tiếp cáp USB từ ESP32 Slave vào máy tính, mở Serial Monitor ở baudrate `115200` để xem kết quả khi Master gửi sang.*
+*Lưu ý: Mạch 1 và Mạch 2 phải được nối chung chân GND.*
