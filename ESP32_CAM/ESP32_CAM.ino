@@ -84,12 +84,12 @@ void setup() {
 
   // ==================================================
   // CAU HINH CHAT LUONG ANH CAO NHAT CO THE
-  // UXGA = 1600x1200 - Do phan giai lon nhat cua OV2640
-  // jpeg_quality: 0-63, cang THAP cang NET. Muc 10 la can bang hoan hao cho OCR (~90KB)
+  // SVGA = 800x600 - Phan giai toi uu nhat cho AI / EasyOCR
+  // jpeg_quality = 6 (Chất lượng rất cao, cực kỳ sắc nét nhưng dung lượng nhỏ ~40KB giúp mạng siêu nhanh)
   // fb_count = 2: Bo dem kep, tranh bi mo do lag bo dem
   // ==================================================
-  config.frame_size   = FRAMESIZE_UXGA;
-  config.jpeg_quality = 10;
+  config.frame_size   = FRAMESIZE_SVGA;
+  config.jpeg_quality = 6;
   config.fb_count     = 2;
 
   esp_err_t err = esp_camera_init(&config);
@@ -103,8 +103,8 @@ void setup() {
   // ==================================================
   sensor_t * s = esp_camera_sensor_get();
 
-  s->set_framesize(s, FRAMESIZE_UXGA);
-  s->set_quality(s, 4);
+  s->set_framesize(s, FRAMESIZE_SVGA);
+  s->set_quality(s, 6);
 
   // Anh sang, tuong phan, do net
   s->set_brightness(s, 1);              // Tang sang nhe (+1)

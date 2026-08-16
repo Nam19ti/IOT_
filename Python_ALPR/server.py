@@ -56,7 +56,7 @@ def create_app(controller):
         start = time.time()
         p("\n[WEB] Nhan lenh Test OCR thu cong...")
         try:
-            frames = controller.camera.capture_frames(num_frames=3, interval=0.05)
+            frames = controller.camera.capture_frames(num_frames=1, interval=0.0)
             if not frames:
                 p("    -> [LOI] Khong chup duoc anh tu IP Webcam!")
                 return jsonify({"success": False, "error": "Loi camera hoac URL khong dung"})
@@ -86,11 +86,11 @@ def create_app(controller):
         start = time.time()
         p("\n[HETHONG] IOT_2 bao co xe vao! Dang chup anh tu ESP32-CAM...")
         
-        # Thêm chút delay để xe đi vào vừa khung hình (Tùy chỉnh góc camera)
-        time.sleep(1.0)
+        # Thêm chút delay siêu ngắn để xe vừa chớm vào khung hình
+        time.sleep(0.2)
         
         try:
-            frames = controller.camera.capture_frames(num_frames=3, interval=0.1)
+            frames = controller.camera.capture_frames(num_frames=1, interval=0.0)
             if not frames:
                 p("    -> [LOI] Khong chup duoc anh tu ESP32-CAM!")
                 return jsonify({"success": False, "error": "Loi ESP32-CAM"})
