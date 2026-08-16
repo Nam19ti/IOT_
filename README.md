@@ -1,7 +1,7 @@
 # HỆ THỐNG NHẬN DIỆN BIỂN SỐ TỰ ĐỘNG (ALPR) TÍCH HỢP IOT
 
 > **Tóm tắt:** 
-> Dự án này triển khai một giải pháp Trạm Thu Phí Thông minh ứng dụng Internet of Things (IoT) và Trí tuệ Nhân tạo (AI). Hệ thống sử dụng kiến trúc phân tán với 2 vi điều khiển ESP32 đảm nhiệm logic vật lý (Zero-Crash) và giao tiếp mạng cục bộ (LAN HTTP). Mô hình AI Lai (Hybrid AI) kết hợp giữa API Gemini-3.5-Flash (Cloud) và EasyOCR (Edge) đảm bảo khả năng đọc biển số tốc độ cao và tự động dự phòng khi mất mạng. Cơ sở dữ liệu và cảnh báo được đồng bộ hóa toàn diện qua MongoDB, Firebase Realtime Database và Telegram Bot.
+> Dự án này triển khai một giải pháp Trạm Thu Phí Thông minh ứng dụng Internet of Things (IoT) và Trí tuệ Nhân tạo (AI). Hệ thống sử dụng kiến trúc phân tán với 2 vi điều khiển ESP32 đảm nhiệm logic vật lý (Zero-Crash) và giao tiếp mạng cục bộ (LAN HTTP). Mô hình AI Lai (Hybrid AI) kết hợp giữa API Gemini-3.5-Flash (Cloud via SDK google-genai) và EasyOCR (Edge) đảm bảo khả năng đọc biển số tốc độ cao và tự động dự phòng khi mất mạng. Hệ thống trang bị màn hình đăng nhập bảo mật, Bảng điều khiển Web UI mượt mà hỗ trợ chỉnh vùng ROI (Drag/Resize), Dashboard tách biệt Lịch sử Cloud & Hàng đợi Offline, cùng khả năng đồng bộ hóa qua MongoDB, Firebase Realtime Database và Telegram Bot.
 
 ---
 
@@ -16,7 +16,8 @@ Các hệ thống trạm thu phí truyền thống hoặc bãi giữ xe bán t�
 ### 1.2. Mục tiêu giải quyết
 - 🛡️ **Kiến trúc Zero-Crash:** Áp dụng thuật toán bảo vệ kép (Double Check) qua cảm biến siêu âm, ngăn chặn tuyệt đối việc barie hạ sớm.
 - ⚡ **Giao tiếp LAN HTTP (Micro-latency):** Các vi điều khiển giao tiếp trực tiếp với Server thông qua HTTP RESTful API, giảm độ trễ xuống dưới 50ms.
-- 🧠 **Hybrid AI & Offline Queue:** Chạy song song Cloud AI (độ chính xác cao) và Edge AI (dự phòng). Tích hợp `SyncManager` để lưu file đệm CSV (Offline Queue) tự động đồng bộ khi có mạng.
+- 🧠 **Hybrid AI (Google GenAI & EasyOCR):** Chạy song song Cloud AI (Gemini 3.5 Flash / 2.5 Flash) và Edge AI (EasyOCR). Tích hợp `SyncManager` tự động lưu bản ghi vào `history` MongoDB và lưu file đệm CSV (`pending_sync.csv`) khi mất mạng.
+- 🔒 **Bảo mật & Trải nghiệm Web UI:** Trang đăng nhập Session Admin, tùy chỉnh vùng nhận diện ROI (Kéo di chuyển & Thu phóng trực tiếp), Dashboard phân tab dữ liệu chuẩn xác, xử lý xe lạ xóa hàng loạt không cần tải lại trang.
 
 ---
 
@@ -144,7 +145,7 @@ python -m venv venv
 venv\Scripts\activate
 
 # Cài đặt thư viện
-pip install flask opencv-python easyocr google-generativeai requests pymongo
+pip install flask opencv-python easyocr google-genai google-generativeai requests pymongo
 ```
 
 ### Bước 4: Khởi động hệ thống
@@ -158,18 +159,21 @@ python server.py
 
 ## 6. HƯỚNG DẪN SỬ DỤNG
 
-### Cấu hình Hệ thống trên Web
-Giao diện điều khiển cung cấp một bảng cấu hình toàn diện. Lần đầu sử dụng, bạn cần nhập:
-1. **URL Camera:** Link IP Webcam từ điện thoại (vd: `http://192.168.137.233:8080/video`).
-2. **Mô hình AI:** Chọn `Hybrid (Gemini + EasyOCR)` (Yêu cầu điền Gemini API Key) hoặc `Offline (EasyOCR)`.
-3. **Dịch vụ Đám mây:** 
-   - Điền Telegram Bot Token.
-   - Điền Chuỗi kết nối MongoDB (URI).
-   - Điền Firebase URL (Dạng `https://xyz.firebaseio.com/`).
-   *(Hệ thống hỗ trợ gạt Tắt/Bật từng dịch vụ độc lập).*
+### Cấu hình và Tính năng trên Bảng Điều Khiển Web (Dashboard)
+Giao diện điều khiển cung cấp một bảng quản trị toàn diện, bảo mật bằng mật khẩu:
+1. **Đăng nhập Bảo mật (Login):** Yêu cầu xác thực tài khoản Admin trước khi truy cập hệ thống.
+2. **Tùy chỉnh vùng nhận diện ROI (Drag & Resize):**
+   - Nắm kéo vùng màu xanh để di chuyển (Drag).
+   - Nắm kéo **núm đỏ** ở góc dưới bên phải để thu nhỏ / phóng to vùng cắt ảnh (Resize).
+3. **Cấu hình Hệ thống (`[Cài Đặt]`):** Nhấp nút `[Cài Đặt]` để bật bảng điều chỉnh URL IP Webcam, Gemini API Key, MongoDB URI, Firebase URL, Telegram Bot Token.
+4. **Hệ thống Tab Quản lý:**
+   - **Trạm Thu Phí:** Theo dõi camera trực tiếp, kết quả OCR và bảng điều khiển cổng LAN.
+   - **Xe Khách Lạ:** Hiển thị xe chưa có trong CSDL. Hỗ trợ ô tích chọn (Checkbox) để **Xóa Đã Chọn** hàng loạt hoặc Duyệt/Cảnh báo tức thì (Cập nhật DOM 100% không reload trang).
+   - **Lịch Sử Nhận Diện:** Đọc 50 lượt xe đi qua gần nhất từ Cloud MongoDB, hiển thị nhãn phân loại màu sắc (🟢 Xe Quen / 🟡 Xe Lạ / 🔴 CẢNH BÁO).
+   - **Hàng Đợi CSV:** Quản lý danh sách đệm khi rớt mạng. Các lượt xe đã được đẩy lên Cloud sẽ tự động biến mất khỏi danh sách này.
 
 ### Vận hành
 - **Tự động:** Đưa phương tiện đi ngang qua cảm biến 1. Hệ thống sẽ tự động chụp ảnh, phân tích, đẩy dữ liệu lên đám mây, mở cổng và tự đóng cổng.
-- **Thủ công:** Trên giao diện Web có nút **"Chụp & Nhận Diện"** để test riêng hệ thống AI, hoặc các nút **"Mở Cổng" / "Đóng Cổng"** để can thiệp vật lý trực tiếp xuống ESP32.
+- **Thủ công:** Trên giao diện Web có nút **"Chụp & Nhận Diện"** để test riêng hệ thống AI, nút **"Mở (Tự Động Đóng Sau 3s)"** (chạy Background Thread tự động đóng sau 3s) hoặc các nút điều khiển cổng khẩn cấp.
 
 > **Lưu ý Căn chỉnh:** Lần đầu cắm điện, mạch Master sẽ nháy đèn và chạy đo đạc không gian xung quanh làm mẫu nền khoảng 2 giây. Xin vui lòng không đứng che cảm biến trong lúc này. Màn hình LCD sẽ báo `He thong SS` khi quá trình hoàn tất.

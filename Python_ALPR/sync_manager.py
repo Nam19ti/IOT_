@@ -192,6 +192,19 @@ class SyncManager:
                             "timestamp": int(timestamp)
                         })
                         p(f"  -> [1/2] MongoDB: Đã lưu ảnh Xe lạ vào DB.")
+                
+                # ===================================================
+                # LƯU VÀO COLLECTION HISTORY (Bất kể xe quen hay lạ)
+                # ===================================================
+                b64_hist = self._img_to_b64(img_path)
+                db['history'].insert_one({
+                    "plate": plate,
+                    "timestamp": int(timestamp),
+                    "vehicle_type": vehicle_type,  # "known", "warning", "stranger"
+                    "image_base64": b64_hist,
+                    "image_filename": os.path.basename(img_path),
+                })
+                p(f"  -> [1/2] MongoDB History: Đã lưu lịch sử xe {plate} ({vehicle_type})")
                         
             except Exception as e:
                 p(f"  -> [1/2] MongoDB LỖI (Mất Mạng?): {e}")

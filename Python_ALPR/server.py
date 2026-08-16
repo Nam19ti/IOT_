@@ -3,7 +3,7 @@ import time
 # Import thư viện xử lý đa luồng, giúp ứng dụng chạy nền các tác vụ nặng (như load AI, Cloudflare)
 import threading
 # Import Flask - Web framework nhẹ để tạo API và Web server
-from flask import Flask, Response, jsonify, request, send_file, session
+from flask import Flask, Response, jsonify, request, send_file, session, render_template_string
 # Import OpenCV để xử lý ảnh (đọc, ghi ảnh, tiền xử lý nếu cần)
 import cv2
 # Import thư viện os để làm việc với đường dẫn, tệp tin và thư mục hệ thống
@@ -210,29 +210,22 @@ def create_app(controller):
     @app.route('/api/history')
     def api_history():
         """Trả về 50 lịch sử nhận diện gần nhất từ MongoDB"""
-        from cloud import MongoDBClient
-        if not controller.config.get("enable_firebase", True):
-            return jsonify({"success": False, "error": "Đám mây đang tắt. Chỉ lưu nội bộ."})
+        import pymongo
         mongo_uri = controller.config.get("mongo_uri", "").strip()
         if not mongo_uri:
-            return jsonify({"success": False, "error": "Chưa cấu hình MongoDB URI."})
+            return jsonify({"success": False, "error": "Chưa cấu hình MongoDB URI trong phần Cài Đặt."})
         try:
-            db_client = MongoDBClient(mongo_uri)
-            db = db_client.get_database()
-            if db is None:
-                return jsonify({"success": False, "error": "Không thể kết nối MongoDB."})
-            
+            client = pymongo.MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+            db = client['iot_thanglong']
             records = list(db['history'].find().sort("timestamp", -1).limit(50))
             data = []
             for r in records:
-                # Get the base64 image or just rely on the history URL if we synced it
-                # actually, history objects in Mongo have "plate", "timestamp", "image_base64"
-                item = {
+                data.append({
                     "plate": r.get("plate", ""),
                     "timestamp": r.get("timestamp", 0),
+                    "vehicle_type": r.get("vehicle_type", "unknown"),
                     "image_base64": r.get("image_base64", "")
-                }
-                data.append(item)
+                })
             return jsonify({"success": True, "data": data})
         except Exception as e:
             return jsonify({"success": False, "error": str(e)})
@@ -583,7 +576,7 @@ def create_app(controller):
         Mục đích: Trang chủ của Web UI (Bảng điều khiển).
         Giải thích: Import hàm render HTML và trả về toàn bộ giao diện cho người dùng tương tác.
         """
-        from web_html import get_html # Tách file chứa code HTML/JS ra module riêng cho gọn
+        from web_html import get_html
         return get_html(controller)
         
     # Trả về đối tượng app để chạy server

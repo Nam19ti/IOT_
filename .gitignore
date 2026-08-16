@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+Python_ALPR/__pycache__/
+Python_ALPR/captures/*.jpg
+Python_ALPR/history/*.jpg
+Python_ALPR/history/*.csv
+.venv/
+venv/

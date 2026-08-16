@@ -173,7 +173,7 @@ def get_html(controller):
       <div class="card">
         <div class="card-title">
           &#128241; Camera IP Webcam (Dien Thoai)
-          <span class="gear-btn" onclick="toggleConfig()" title="Cau hinh URL"></span>
+          <span class="gear-btn" onclick="toggleConfig()" title="Cau hinh URL">[Cài Đặt]</span>
         </div>
         <div class="cam-wrap" id="cam_container">
           <img id="cam_view" src="/captures/latest_capture.jpg"
@@ -630,17 +630,23 @@ def get_html(controller):
       
       let html = '<div style="background:#0f172a; border:1px solid #334155; border-radius:8px; overflow:hidden;">';
       html += '<div style="display:flex; padding:10px; background:#1e293b; font-weight:bold; border-bottom:1px solid #334155;">';
-      html += '<div style="width:20%">Ảnh</div><div style="width:30%">Thời gian</div><div style="width:30%">Biển số</div></div>';
+      html += '<div style="width:15%">Ảnh</div><div style="width:30%">Thời gian</div><div style="width:30%">Biển số</div><div style="width:25%">Loại xe</div></div>';
       
       data.forEach(item => {{
         let timeStr = new Date(parseInt(item.timestamp)).toLocaleString('vi-VN');
-        let imgTag = `<img src="data:image/jpeg;base64,${{item.image_base64}}" style="width:50px; height:50px; object-fit:cover; border-radius:4px;">`;
-        if(!item.image_base64) imgTag = `<span style="color:#64748b; font-size:0.8rem;">(No image)</span>`;
+        let imgTag = `<img src="data:image/jpeg;base64,${{item.image_base64}}" style="width:55px; height:45px; object-fit:cover; border-radius:4px;">`;
+        if(!item.image_base64) imgTag = `<span style="color:#64748b; font-size:0.75rem;">(No image)</span>`;
+        
+        let typeColor = '#64748b', typeLabel = 'Không rõ';
+        if(item.vehicle_type === 'known')    {{ typeColor = '#10b981'; typeLabel = 'Xe Quen'; }}
+        if(item.vehicle_type === 'stranger') {{ typeColor = '#f59e0b'; typeLabel = 'Xe Lạ'; }}
+        if(item.vehicle_type === 'warning')  {{ typeColor = '#ef4444'; typeLabel = 'CANH BAO'; }}
         
         html += `<div style="display:flex; align-items:center; padding:10px; border-bottom:1px solid #1e293b;">`;
-        html += `<div style="width:20%;">${{imgTag}}</div>`;
-        html += `<div style="width:30%; font-size:0.85rem; color:#94a3b8;">${{timeStr}}</div>`;
-        html += `<div style="width:30%; font-size:1.1rem; color:#fff; font-weight:bold;">${{item.plate}}</div>`;
+        html += `<div style="width:15%;">${{imgTag}}</div>`;
+        html += `<div style="width:30%; font-size:0.82rem; color:#94a3b8;">${{timeStr}}</div>`;
+        html += `<div style="width:30%; font-size:1rem; color:#fff; font-weight:bold; letter-spacing:0.08em;">${{item.plate}}</div>`;
+        html += `<div style="width:25%;"><span style="background:${{typeColor}}22; color:${{typeColor}}; border:1px solid ${{typeColor}}; border-radius:20px; padding:3px 10px; font-size:0.78rem; font-weight:bold;">${{typeLabel}}</span></div>`;
         html += `</div>`;
       }});
       html += '</div>';
@@ -666,6 +672,7 @@ def get_html(controller):
         let timeStr = new Date(item.timestamp).toLocaleString('vi-VN');
         html += `
         <div class="stranger-item" id="stranger_item_${{key}}">
+          <input type="checkbox" class="stranger-checkbox" value="${{key}}">
           <img src="data:image/jpeg;base64,${{item.image_base64}}" class="stranger-img">
           <div class="stranger-info">
             <div style="margin-bottom: 8px;">
@@ -750,6 +757,39 @@ def get_html(controller):
     }});
   }}
   
+  function deleteSelected() {{
+    const checkboxes = document.querySelectorAll('.stranger-checkbox:checked');
+    if(checkboxes.length === 0) {{
+      alert("Vui lòng chọn ít nhất 1 xe để xóa!");
+      return;
+    }}
+    if(!confirm(`Bạn chắc chắn muốn xóa ${{checkboxes.length}} xe đã chọn?`)) return;
+    
+    checkboxes.forEach(cb => {{
+      const key = cb.value;
+      const plate = document.getElementById('plate_input_' + key).value;
+      fetch('/api/stranger/action', {{
+        method: 'POST', headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{ key: key, plate: plate, action: 'delete' }})
+      }}).then(r=>r.json()).then(d => {{
+        if(d.success) {{
+          const el = document.getElementById('stranger_item_' + key);
+          if(el) el.remove();
+          let badge = document.getElementById('stranger_badge');
+          if(badge) {{
+            let count = parseInt(badge.innerText) || 0;
+            if(count> 0) count--;
+            badge.innerText = count;
+            badge.style.display = count> 0 ? 'inline-block' : 'none';
+          }}
+          if(document.querySelectorAll('.stranger-item').length === 0) {{
+            document.getElementById('stranger_list').innerHTML = '<p style="text-align:center; color:#10b981;">Tuyệt vời! Không có xe lạ nào tồn đọng.</p>';
+          }}
+        }}
+      }});
+    }});
+  }}
+
   setTimeout(loadStrangers, 3000); // Tu dong load ngam badge
 
 </script>

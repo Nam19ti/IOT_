@@ -14,13 +14,22 @@ try:
 except ImportError:
     EASYOCR_AVAILABLE = False
 
-# Kiểm tra thư viện Google Generative AI (Dùng cho Gemini - Nhận diện Cloud)
+# Kiểm tra thư viện Google Generative AI mới (google-genai SDK)
 try:
-    import google.generativeai as genai
+    from google import genai as google_genai
+    from google.genai import types as genai_types
     from PIL import Image
+    import io
     GEMINI_AVAILABLE = True
 except ImportError:
-    GEMINI_AVAILABLE = False
+    try:
+        import google.generativeai as genai
+        from PIL import Image
+        GEMINI_AVAILABLE = True
+        google_genai = None
+    except ImportError:
+        GEMINI_AVAILABLE = False
+        google_genai = None
 
 # ==========================================
 # CẤU HÌNH BIỂN SỐ VÀ TỪ ĐIỂN SỬA LỖI
@@ -84,7 +93,8 @@ class HybridOCR:
             
         # Nạp cấu hình API Key cho Gemini nếu người dùng chọn chế độ Cloud
         if GEMINI_AVAILABLE and self.api_key:
-            genai.configure(api_key=self.api_key)
+            if google_genai is None and 'genai' in globals():
+                genai.configure(api_key=self.api_key)
             p("[AI] Đã nạp cấu hình Google Gemini API!")
 
     def _fix_ocr(self, text):
@@ -344,27 +354,40 @@ class HybridOCR:
             return "Loi Phan Mem"
 
     def _run_gemini(self, img):
-        """Nhận diện biển số trên Cloud bằng Google Gemini 3.5 Flash"""
+        """Nhận diện biển số trên Cloud bằng Google Gemini 2.5 Flash"""
         if not GEMINI_AVAILABLE:
             return "Khong Co Gemini"
         if not self.api_key:
             return "Thieu API Key"
         try:
-            # Chuyển đổi định dạng ảnh từ OpenCV (BGR) sang chuẩn PIL (RGB) để đẩy lên Gemini
+            # Chuyển đổi ảnh OpenCV (BGR) -> PIL (RGB)
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(img_rgb)
             
-            genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel('gemini-3.5-flash')
-            
-            # Prompt ra lệnh rõ ràng cho Gemini để chỉ lấy đúng chuỗi biển số
+            # Prompt rõ ràng
             prompt = "Read the license plate number from this image. Output ONLY the alphanumeric string without any spaces or symbols. E.g. '29A12345'. If no plate is found, output 'None'."
-            
-            response = model.generate_content([prompt, pil_img])
-            raw = response.text.strip().upper()
+
+            if google_genai is not None:
+                # === SDK MỚI: google-genai ===
+                import io
+                buf = io.BytesIO()
+                pil_img.save(buf, format='JPEG')
+                buf.seek(0)
+                client = google_genai.Client(api_key=self.api_key)
+                response = client.models.generate_content(
+                    model='gemini-3.5-flash',
+                    contents=[prompt, google_genai.types.Part.from_bytes(data=buf.read(), mime_type='image/jpeg')]
+                )
+                raw = response.text.strip().upper()
+            else:
+                # === SDK CŨ: google.generativeai (fallback) ===
+                genai.configure(api_key=self.api_key)
+                model = genai.GenerativeModel('gemini-3.5-flash')
+                response = model.generate_content([prompt, pil_img])
+                raw = response.text.strip().upper()
+
             if raw == "NONE":
                 return None
-                
             processed = self._post_process(raw)
             return processed if processed else raw
         except Exception as e:
@@ -421,7 +444,7 @@ class HybridOCR:
                 
                 # Nếu Gemini trả về lỗi mạng hoặc lỗi API, kích hoạt cơ chế Fallback
                 if res and res not in ("Mat Mang", "Thieu API Key", "Khong Co Gemini", "Loi Phan Mem", "Khong Thay Bien"):
-                    engine_used = "Gemini 1.5"
+                    engine_used = "Gemini 3.5 Flash"
                 else:
                     p("      -> [AI] Gemini thất bại (Mất mạng hoặc Lỗi). TỰ ĐỘNG FALLBACK sang EasyOCR Offline!")
                     res = self._run_easyocr(cropped_frame)
