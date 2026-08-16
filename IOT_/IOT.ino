@@ -86,11 +86,16 @@ void openGate() {
 // Kiểm tra xem có xe đang nằm dưới cổng (CB2) không (Đo 3 lần lấy giá trị nhỏ nhất để chống nhiễu)
 bool isCarUnderGate() {
   float min_d = 999.0;
+  int lost_ground = 0;
   for (int i = 0; i < 3; i++) {
     float d2 = getDistance(trigPin2, echoPin2);
     if (d2 < min_d) min_d = d2;
+    if (d2 >= 990.0) lost_ground++;
     delay(15);
   }
+  // Nếu cả 3 lần đo đều bị timeout (mất sóng nền do kính xe hắt đi), thì chắc chắn có vật cản che khuất
+  if (lost_ground == 3) return true;
+  
   // Nếu khoảng cách d2 nhỏ (<20) hoặc giảm đột ngột so với nền
   return (min_d < 20.0) || (baseline2 - min_d > THRESHOLD);
 }
@@ -232,7 +237,8 @@ void loop() {
   }
   
   // Logic xe đi RA (CB2)
-  bool trigger2 = (d2 < 20.0) || (baseline2 - d2 > THRESHOLD);
+  // Tính luôn trường hợp d2 >= 990.0 (Timeout) là có xe chắn ngang làm mất dội sóng
+  bool trigger2 = (d2 < 20.0) || (baseline2 - d2 > THRESHOLD) || (d2 >= 990.0);
   
   if (trigger2 && carInside) {
     // Xe bắt đầu tiến vào và chắn ngang Cảm biến 2 (Đang nằm dưới Barie)
