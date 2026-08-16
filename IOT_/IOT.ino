@@ -103,18 +103,20 @@ bool isCarUnderGate() {
 // Đóng cổng
 void closeGate() {
   if (isGateOpen) {
-    if (isCarUnderGate()) {
-      Serial.println(">> [CANH BAO] CO XE DUOI CONG! TU CHOI DONG CONG DE AN TOAN!");
-      alarmBuzzer(); // Còi hú báo động liên tục
-      return;
+    // KIEM TRA KE'P: Dung ca bien trang thai carAtGate VA ket qua cam bien tuoi
+    // carAtGate = true co nghia la vong lap chinh da xac nhan co xe duoi cong
+    if (carAtGate || isCarUnderGate()) {
+      Serial.println(">> [CANH BAO] CO XE DUOI CONG! TU CHOI DONG CONG!");
+      alarmBuzzer();
+      return; // Thoat ra, TUYET DOI khong dong cong
     }
     Serial.println(">> DONG CONG");
-    gateServo.write(0); // Trở về 0 độ để đóng
+    gateServo.write(0);
     beepBuzzer();
     delay(100);
     beepBuzzer();
     isGateOpen = false;
-    Serial2.println("STATE:CLOSED"); // Báo trạng thái cho IOT_2
+    Serial2.println("STATE:CLOSED");
   }
 }
 
@@ -183,15 +185,23 @@ void setup() {
 }
 
 void loop() {
-  // 1. Kiểm tra Nút bấm thủ công (Xử lý ngay lập tức nhờ Ngắt phần cứng)
+  // 1. Kiểm tra Nút bấm thủ công
   if (buttonPressed) {
     buttonPressed = false;
     if (isGateOpen) {
-      closeGate();
-      isManualMode = false; // Tắt chế độ thủ công khi đã đóng cổng
+      // Chi reset isManualMode neu closeGate() thanh cong thuc su
+      bool hadCar = carAtGate || isCarUnderGate();
+      if (hadCar) {
+        Serial.println(">> [NUT BAM] CO XE DUOI CONG - KHONG DONG!");
+        alarmBuzzer();
+        // isManualMode KHONG thay doi, giu nguyen trang thai
+      } else {
+        closeGate();
+        isManualMode = false;
+      }
     } else {
       openGate();
-      isManualMode = true; // Bật chế độ thủ công: KHÔNG đóng cổng tự động
+      isManualMode = true;
     }
   }
 
