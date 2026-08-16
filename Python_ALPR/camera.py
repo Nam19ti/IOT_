@@ -24,43 +24,45 @@ class CameraClient:
         self.url = new_url.strip() if new_url else ""
         if self.url:
             # Tự động chèn giao thức http nếu thiếu
-            if not self.url.startswith("http://") and not self.url.startswith("https://"):
+            if not (self.url.startswith("http://") or self.url.startswith("https://") or self.url.startswith("rtsp://")):
                 self.url = "http://" + self.url
                 
-            # IP Webcam Android cung cấp ảnh tĩnh ở đường dẫn /photo.jpg hoặc /shot.jpg
-            # Nếu người dùng chỉ nhập IP (vd: 192.168.1.5:8080), tự động gắp /shot.jpg vào đuôi
-            if not self.url.endswith(".jpg"):
-                if self.url.endswith("/"):
-                    self.url += "shot.jpg"
-                else:
-                    self.url += "/shot.jpg"
+            # Chỉ thêm /shot.jpg nếu URL chỉ gồm host:port hoặc kết thúc bằng /
+            from urllib.parse import urlparse
+            parsed = urlparse(self.url)
+            if not parsed.path or parsed.path == "/":
+                self.url = self.url.rstrip("/") + "/shot.jpg"
         p(f"[CAMERA] Đã cập nhật URL luồng ảnh: {self.url}")
 
     def fetch_image(self):
         """
-        Lấy 1 khung hình (Frame) duy nhất từ luồng IP Webcam.
-        Được thiết kế cực kỳ an toàn (Bọc try-catch) để nếu camera rớt mạng, 
-        Server Python không bị văng lỗi (Crash) mà chỉ âm thầm trả về None.
+        Lấy 1 khung hình (Frame) duy nhất từ luồng IP Webcam / Camera.
         """
         if not self.url:
+            p("[CAMERA LỖI] URL Camera đang bị trống!")
             return None
             
         try:
-            # Tạo HTTP Request với Timeout 10s để tránh bị treo Server nếu mạng nội bộ yếu
-            req = urllib.request.urlopen(self.url, timeout=10.0)
-            
-            # Đọc byte nhị phân thô từ mạng và ép kiểu thành mảng NumPy 1 chiều (uint8)
+            # Tạo HTTP Request với Timeout 5s để tránh treo Server nếu mạng yếu
+            req = urllib.request.urlopen(self.url, timeout=5.0)
             arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
-            
-            # Dùng OpenCV giải mã mảng 1 chiều đó thành Ma trận ảnh đa chiều (BGR Format)
             img = cv2.imdecode(arr, -1)
             
-            # CHECK MẢNG NUMPY AN TOÀN: Đảm bảo ảnh tải về không bị lỗi hay trống rỗng
             if img is not None and img.size > 0:
                 return img
-        except Exception:
-            pass # Nuốt lỗi, coi như chụp xịt
+        except Exception as e:
+            p(f"[CAMERA LỖI CHỤP HTTP]: {e} (URL: {self.url})")
             
+        # Thử fallback bằng OpenCV VideoCapture nếu URL là luồng video stream
+        try:
+            cap = cv2.VideoCapture(self.url)
+            ret, frame = cap.read()
+            cap.release()
+            if ret and frame is not None and frame.size > 0:
+                return frame
+        except Exception as e2:
+            p(f"[CAMERA LỖI VIDEO STREAM]: {e2}")
+
         return None
 
     def get_data(self):
