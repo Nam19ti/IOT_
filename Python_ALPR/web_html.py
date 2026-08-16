@@ -206,6 +206,11 @@ def get_html(controller):
                   value="{controller.config.get('ip_camera_url', 'http://192.168.1.xxx:8080/shot.jpg')}" placeholder="Vd: http://192.168.1.100:8080">
             </div>
             <div>
+              <label style="color: #94a3b8; font-size: 0.9rem;">IP Mạch 2 ESP32 (Điều khiển cổng & LCD):</label>
+              <input type="text" id="iot2_ip" style="width:100%; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; box-sizing:border-box; margin-top: 5px;"
+                  value="{controller.config.get('iot2_ip', '192.168.137.199')}" placeholder="Vd: 192.168.1.199">
+            </div>
+            <div>
               <label style="color: #94a3b8; font-size: 0.9rem;">Telegram Bot Token:</label>
               <input type="password" id="telegram_token" style="width:100%; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; box-sizing:border-box; margin-top: 5px;"
                   value="{controller.config.get('telegram_token', '')}" placeholder="Bot Token từ BotFather...">
@@ -380,8 +385,6 @@ def get_html(controller):
   }}
 
   // ===================== SETTINGS =====================
-  const IOT2_IP = '192.168.137.199'; // IP tinh Mạch 2
-
   function toggleConfig() {{
     const panel = document.getElementById('config_panel');
     panel.classList.toggle('active');
@@ -389,6 +392,7 @@ def get_html(controller):
 
   function saveSettings() {{
     const url = document.getElementById('cam_url').value;
+    const iot2_ip = document.getElementById('iot2_ip').value;
     const api_key = document.getElementById('gemini_api_key').value;
     const ai_mode = document.getElementById('ai_mode').value;
     const tele = document.getElementById('telegram_token').value;
@@ -396,10 +400,12 @@ def get_html(controller):
     const fire = document.getElementById('firebase_url').value;
     const en_fire = document.getElementById('enable_firebase').checked;
     const en_tele = document.getElementById('enable_telegram').checked;
+    
     fetch('/set_settings', {{
       method:'POST', headers:{{'Content-Type':'application/json'}},
       body: JSON.stringify({{ 
         "url": url,
+        "iot2_ip": iot2_ip,
         "gemini_api_key": api_key,
         "ai_mode": ai_mode,
         "telegram_token": tele,

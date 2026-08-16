@@ -276,34 +276,37 @@ def create_app(controller):
     @app.route('/open_gate', methods=['GET', 'POST'])
     def open_gate():
         import requests, threading, time
+        iot2_ip = controller.config.get("iot2_ip", "192.168.137.199").strip()
         try:
-            requests.get("http://192.168.137.199/open_gate", timeout=3)
+            requests.get(f"http://{iot2_ip}/open_gate", timeout=3)
             def auto_close():
                 time.sleep(3)
-                try: requests.get("http://192.168.137.199/close_gate", timeout=3)
+                try: requests.get(f"http://{iot2_ip}/close_gate", timeout=3)
                 except: pass
             threading.Thread(target=auto_close).start()
             return jsonify({"success": True})
         except:
-            return jsonify({"success": False, "error": "Khong the ket noi den ESP32"})
+            return jsonify({"success": False, "error": f"Không thể kết nối đến ESP32 ({iot2_ip})"})
 
     @app.route('/open_gate_manual', methods=['GET', 'POST'])
     def open_gate_manual():
         import requests
+        iot2_ip = controller.config.get("iot2_ip", "192.168.137.199").strip()
         try:
-            requests.get("http://192.168.137.199/open_gate_manual", timeout=3)
+            requests.get(f"http://{iot2_ip}/open_gate_manual", timeout=3)
             return jsonify({"success": True})
         except:
-            return jsonify({"success": False, "error": "Khong the ket noi den ESP32"})
+            return jsonify({"success": False, "error": f"Không thể kết nối đến ESP32 ({iot2_ip})"})
 
     @app.route('/close_gate', methods=['GET', 'POST'])
     def close_gate():
         import requests
+        iot2_ip = controller.config.get("iot2_ip", "192.168.137.199").strip()
         try:
-            requests.get("http://192.168.137.199/close_gate", timeout=3)
+            requests.get(f"http://{iot2_ip}/close_gate", timeout=3)
             return jsonify({"success": True})
         except:
-            return jsonify({"success": False, "error": "Khong the ket noi den ESP32"})
+            return jsonify({"success": False, "error": f"Không thể kết nối đến ESP32 ({iot2_ip})"})
 
     @app.route('/process_latest')
     def process_latest():
@@ -509,6 +512,38 @@ def create_app(controller):
             # BÀN GIAO CHO MODULE ĐỒNG BỘ - Đẩy biển số này lên mạng
             controller.sync_manager.add_to_queue(plate, history_path)
             
+            # TỰ ĐỘNG GỬI LỆNH MỞ CỔNG (XE QUEN) HOẶC TỪ CHỐI (XE LẠ/CẢNH BÁO) SANG ESP32 (IOT_2)
+            if plate not in ("Khong Nhan Dien Duoc", "Khong Thay Bien"):
+                def _trigger_esp32_gate():
+                    try:
+                        import requests, pymongo, re
+                        iot2_ip = controller.config.get("iot2_ip", "192.168.137.199").strip()
+                        mongo_uri = controller.config.get("mongo_uri", "").strip()
+                        
+                        is_known = False
+                        if mongo_uri:
+                            try:
+                                client = pymongo.MongoClient(mongo_uri, serverSelectionTimeoutMS=2000)
+                                db = client['iot_thanglong']
+                                clean_plate = re.sub(r'[^A-Z0-9]', '', plate.upper())
+                                for v in db['vehicles'].find():
+                                    if re.sub(r'[^A-Z0-9]', '', str(v.get("plate", "")).upper()) == clean_plate:
+                                        is_known = True
+                                        break
+                            except Exception as ex_db:
+                                p(f"    -> [DB CHECK ERR]: {ex_db}")
+                                
+                        if is_known:
+                            p(f"    -> [XE QUEN '{plate}']: Gửi lệnh MỞ CỔNG tới ESP32 ({iot2_ip})...")
+                            requests.get(f"http://{iot2_ip}/open_gate?plate={plate}", timeout=3)
+                        else:
+                            p(f"    -> [XE LẠ/CẢNH BÁO '{plate}']: Gửi lệnh TỪ CHỐI tới ESP32 ({iot2_ip})...")
+                            requests.get(f"http://{iot2_ip}/deny_gate?plate={plate}", timeout=3)
+                    except Exception as ex:
+                        p(f"    -> [LỖI GỬI ESP32]: {ex}")
+
+                threading.Thread(target=_trigger_esp32_gate, daemon=True).start()
+
             return jsonify({"success": True, "plate": plate})
             
         except Exception as e:
@@ -527,11 +562,13 @@ def create_app(controller):
         # Đọc dữ liệu JSON do client gửi đến
         d = request.get_json(silent=True)
         if d:
-            # 1. Cập nhật Camera IP
+            # 1. Cập nhật Camera IP & Mạch 2 (ESP32) IP
             if 'url' in d:
                 controller.config.set('ip_camera_url', d['url'])
                 if controller.camera:
                     controller.camera.set_url(d['url'])
+            if 'iot2_ip' in d:
+                controller.config.set('iot2_ip', d['iot2_ip'])
             # 2. Cập nhật Gemini API Key
             if 'gemini_api_key' in d:
                 controller.config.set('gemini_api_key', d['gemini_api_key'])
