@@ -423,6 +423,18 @@ def get_html(controller):
       setTimeout(()=>document.getElementById('save_msg').innerText='', 3000);
     }});
   }}
+  // ===================== GATE CONTROL =====================
+  function gate(path) {{
+    toast('Đang gửi lệnh điều khiển cổng...');
+    fetch(path)
+      .then(r=>r.json())
+      .then(d=>{{
+        if (d.success) toast(' Đã gửi lệnh cổng thành công!');
+        else toast(' Lỗi: ' + (d.error || 'Không gửi được lệnh'));
+      }})
+      .catch(()=>toast(' Lỗi kết nối server!'));
+  }}
+
   // ===================== CAPTURE ONLY =====================
   function doCapture() {{
     const el = document.getElementById('ocr_result');
