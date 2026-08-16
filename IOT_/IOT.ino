@@ -3,10 +3,10 @@
 // =========================================================
 // KHAI BÁO CHÂN PHẦN CỨNG
 // =========================================================
-const int trigPin1 = 5;   // Cảm biến 1 (Vào) - TRIG
-const int echoPin1 = 18;  // Cảm biến 1 (Vào) - ECHO
-const int trigPin2 = 13;  // Cảm biến 2 (Ra)  - TRIG
-const int echoPin2 = 12;  // Cảm biến 2 (Ra)  - ECHO
+const int trigPin1 = 13;  // Cảm biến 1 (Vào) - TRIG
+const int echoPin1 = 12;  // Cảm biến 1 (Vào) - ECHO
+const int trigPin2 = 5;   // Cảm biến 2 (Ra)  - TRIG
+const int echoPin2 = 18;  // Cảm biến 2 (Ra)  - ECHO
 
 const int servoPin = 4;   // Động cơ Servo đóng/mở cổng
 const int buzzerPin = 14; // Còi báo động

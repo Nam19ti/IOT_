@@ -46,17 +46,31 @@ void printLCD(String line1, String line2) {
 // =========================================================
 // KẾT NỐI WIFI VÀ MQTT
 // =========================================================
+unsigned long lastWifiAttempt = 0;
+
 void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
-  printLCD("Dang ket noi", "WiFi...");
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) { delay(500); }
-  printLCD("WiFi OK", WiFi.localIP().toString());
-  delay(1000);
+  
+  if (millis() - lastWifiAttempt > 5000) {
+    lastWifiAttempt = millis();
+    printLCD("Dang ket noi", "WiFi...");
+    Serial.println(">> Đang thử kết nối WiFi...");
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  }
 }
 
 void maintainMQTT() {
-  if (WiFi.status() != WL_CONNECTED) connectWiFi();
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+    return; // Nếu chưa có WiFi thì thoát, để vòng loop() vẫn chạy xử lý UART
+  }
+  
+  // Nếu vừa mới kết nối xong
+  static bool wasConnected = false;
+  if (!wasConnected) {
+    printLCD("WiFi OK", WiFi.localIP().toString());
+    wasConnected = true;
+  }
   
   if (!mqttClient.connected()) {
     printLCD("Dang ket noi", "Đám Mây MQTT...");
