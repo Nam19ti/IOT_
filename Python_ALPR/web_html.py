@@ -1,3 +1,5 @@
+import json
+
 def get_html(controller):
   return f"""<!DOCTYPE html>
 <html lang="vi">
@@ -63,6 +65,7 @@ def get_html(controller):
     
     /* === ROI BOX === */
     .roi-box {{ position: absolute; border: 2px dashed #00d2ff; background: rgba(0, 210, 255, 0.15); cursor: move; }}
+    .resize-handle {{ position: absolute; right: -5px; bottom: -5px; width: 12px; height: 12px; background: #ef4444; cursor: nwse-resize; border-radius: 50%; border: 2px solid white; z-index: 10; }}
     .stranger-checkbox {{ width: 20px; height: 20px; cursor: pointer; accent-color: #ef4444; }}
     /* === WIDGET CAU HINH === */
     .config-widget {{ display: none; margin-top: 1rem; padding: 1rem; background: #1e293b; border-radius: 8px; border: 1px solid #334155; }}
@@ -126,7 +129,7 @@ def get_html(controller):
     <h1> TRAM THU PHI VETC</h1>
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <p>EasyOCR Offline &nbsp;|&nbsp; IP Webcam &nbsp;|&nbsp; LAN HTTP</p>
-      <button class="btn btn-logout" onclick="logout" style="padding: 5px 15px; font-size: 0.8rem;">Đăng Xuất</button>
+      <button class="btn btn-logout" onclick="logout()" style="padding: 5px 15px; font-size: 0.8rem;">Đăng Xuất</button>
     </div>
   </header>
 
@@ -139,6 +142,8 @@ def get_html(controller):
     <div class="tab-container">
       <button class="tab-btn active" id="btn_tab_system" onclick="switchTab('system')">Trạm Thu Phí</button>
       <button class="tab-btn" id="btn_tab_stranger" onclick="switchTab('stranger')">Xe Khách Lạ <span class="badge-count" id="stranger_badge">0</span></button>
+      <button class="tab-btn" id="btn_tab_history" onclick="switchTab('history')">Lịch Sử Nhận Diện</button>
+      <button class="tab-btn" id="btn_tab_offline" onclick="switchTab('offline')">Hàng Đợi CSV</button>
     </div>
 
     <!-- TAB: SYSTEM -->
@@ -168,14 +173,16 @@ def get_html(controller):
       <div class="card">
         <div class="card-title">
           &#128241; Camera IP Webcam (Dien Thoai)
-          <span class="gear-btn" onclick="toggleConfig" title="Cau hinh URL"></span>
+          <span class="gear-btn" onclick="toggleConfig()" title="Cau hinh URL"></span>
         </div>
         <div class="cam-wrap" id="cam_container">
           <img id="cam_view" src="/captures/latest_capture.jpg"
              alt="Chua co anh" onerror="this.style.opacity='0.2'">
           <div class="cam-badge">ANH GAN NHAT</div>
           <!-- VÙNG CHỌN ROI (Region of Interest) -->
-          <div id="roi_box" class="roi-box" title="Kéo để chọn vùng nhận diện biển số"></div>
+          <div id="roi_box" class="roi-box" title="Kéo để di chuyển, nắm góc đỏ để phóng to thu nhỏ">
+             <div class="resize-handle" id="roi_resize" title="Kéo để thay đổi kích thước"></div>
+          </div>
         </div>
         
         <!-- WIDGET CAU HINH (An mac dinh) -->
@@ -221,19 +228,19 @@ def get_html(controller):
               <input type="checkbox" id="enable_telegram" { 'checked' if controller.config.get('enable_telegram', True) else '' }>
               <label for="enable_telegram" style="color: white; font-size: 0.9rem;">Bật quét MongoDB & báo Telegram</label>
             </div>
-            <button class="btn btn-green" style="width: 100%; margin-top: 10px;" onclick="saveSettings">Lưu Cài Đặt</button><a href="/history/action_logs.csv" target="_blank" class="btn btn-blue" style="width:100%; display:block; text-align:center; text-decoration:none; margin-top:10px;">Tải xuống File Nhật Ký (Log)</a>
+            <button class="btn btn-green" style="width: 100%; margin-top: 10px;" onclick="saveSettings()">Lưu Cài Đặt</button><a href="/history/action_logs.csv" target="_blank" class="btn btn-blue" style="width:100%; display:block; text-align:center; text-decoration:none; margin-top:10px;">Tải xuống File Nhật Ký (Log)</a>
             <div id="save_msg" style="text-align:center; color:#10b981; font-weight:bold;"></div>
           </div>
         </div>
 
         <div class="btn-row" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
-          <button class="btn btn-blue" id="btn_capture" onclick="doCapture">
+          <button class="btn btn-blue" id="btn_capture" onclick="doCapture()">
              Chup Anh
           </button>
-          <button class="btn btn-green" id="btn_ocr" onclick="doOCR">
+          <button class="btn btn-green" id="btn_ocr" onclick="doOCR()">
              Chup &amp; Nhan Dien
           </button>
-          <button class="btn btn-red" id="btn_abort" onclick="abortOCR" style="display:none;">
+          <button class="btn btn-red" id="btn_abort" onclick="abortOCR()" style="display:none;">
              Huy Nhận Diện
           </button>
         </div>
@@ -265,8 +272,8 @@ def get_html(controller):
           Các xe chưa có trong hệ thống. Bạn có thể duyệt thêm hoặc đưa vào cảnh báo.
         </p>
         <div style="text-align: right; margin-bottom: 10px; display: flex; justify-content: flex-end; gap: 10px;">
-          <button class="btn btn-logout" onclick="deleteSelected"> Xóa Đã Chọn</button>
-          <button class="btn btn-blue" onclick="loadStrangers"> Làm Mới</button>
+          <button class="btn btn-logout" onclick="deleteSelected()"> Xóa Đã Chọn</button>
+          <button class="btn btn-blue" onclick="loadStrangers()"> Làm Mới</button>
         </div>
         <div id="stranger_list">
           <p style="text-align:center; color:#64748b;">Đang tải dữ liệu...</p>
@@ -277,15 +284,31 @@ def get_html(controller):
     <!-- TAB: OFFLINE QUEUE -->
     <div id="tab_offline" style="display: none;">
       <div class="card">
-        <div class="card-title"> Hàng Đợi Offline (Đang chờ Đồng bộ)</div>
+        <div class="card-title"> Hàng Đợi Offline (Đang chờ Đồng bộ lên Cloud)</div>
         <p style="color:#64748b; font-size:0.88rem; text-align:center; margin-bottom:1rem;">
-          Danh sách các xe được lưu tạm ở dưới ổ cứng (file CSV) vì đường truyền mạng lên MongoDB đang gặp sự cố. Hệ thống sẽ tự động đẩy lên khi mạng ổn định.
+          Danh sách các xe được lưu tạm ở dưới ổ cứng (file CSV) vì đường truyền mạng đang gặp sự cố. Hệ thống sẽ tự động đẩy lên Cloud khi mạng ổn định. Các xe ĐÃ ĐỒNG BỘ lên Cloud sẽ biến mất khỏi danh sách này.
         </p>
         <div style="text-align: right; margin-bottom: 10px;">
-          <button class="btn btn-yellow" onclick="loadOfflineQueue" style="color:#0f172a; font-weight:bold;"> Tải lại</button>
+          <button class="btn btn-yellow" onclick="loadOfflineQueue()" style="color:#0f172a; font-weight:bold;"> Tải lại</button>
         </div>
         <div id="offline_list">
           <p style="text-align:center; color:#64748b;">Đang tải...</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- TAB: HISTORY -->
+    <div id="tab_history" style="display: none;">
+      <div class="card">
+        <div class="card-title"> Lịch Sử Giao Thông (Từ Đám Mây)</div>
+        <p style="color:#64748b; font-size:0.88rem; text-align:center; margin-bottom:1rem;">
+          Hiển thị 50 lượt xe đi qua gần nhất (Đọc từ Cloud Database).
+        </p>
+        <div style="text-align: right; margin-bottom: 10px;">
+          <button class="btn btn-blue" onclick="loadHistory()"> Làm Mới Lịch Sử</button>
+        </div>
+        <div id="history_list">
+          <p style="text-align:center; color:#64748b;">Đang tải dữ liệu lịch sử...</p>
         </div>
       </div>
     </div>
@@ -299,55 +322,72 @@ def get_html(controller):
   function toast(msg, dur=3000) {{
     const t = document.getElementById('_toast');
     t.innerText = msg; t.style.opacity = '1';
-    setTimeout( => t.style.opacity = '0', dur);
+    setTimeout(() => t.style.opacity = '0', dur);
   }}
 
 
   // ===================== ROI LOGIC =====================
   const roiBox = document.getElementById('roi_box');
+  const roiResize = document.getElementById('roi_resize');
   const camWrap = document.getElementById('cam_container');
-  let isDragging = false, startX, startY, startLeft, startTop;
+  let isDragging = false, isResizing = false;
+  let startX, startY, startLeft, startTop, startW, startH;
   const initRoiStr = '{json.dumps(controller.config.get("roi", {"x":0.2, "y":0.4, "w":0.4, "h":0.3}))}';
   let roiData = JSON.parse(initRoiStr.replace(/'/g, '"'));
   
-  function applyRoiStyles {{
+  function applyRoiStyles() {{
     roiBox.style.left = (roiData.x * 100) + '%';
     roiBox.style.top = (roiData.y * 100) + '%';
     roiBox.style.width = (roiData.w * 100) + '%';
     roiBox.style.height = (roiData.h * 100) + '%';
   }}
-  applyRoiStyles;
+  applyRoiStyles();
 
+  // Resize Handle Events
+  roiResize.addEventListener('mousedown', function(e) {{
+    e.stopPropagation();
+    isResizing = true; startX = e.clientX; startY = e.clientY;
+    startW = roiBox.offsetWidth; startH = roiBox.offsetHeight;
+  }});
+
+  // Drag Events
   roiBox.addEventListener('mousedown', function(e) {{
-    if (e.offsetX> roiBox.clientWidth - 20 && e.offsetY> roiBox.clientHeight - 20) return;
     isDragging = true; startX = e.clientX; startY = e.clientY;
     startLeft = roiBox.offsetLeft; startTop = roiBox.offsetTop;
   }});
 
   document.addEventListener('mousemove', function(e) {{
-    if (!isDragging) return;
-    let newLeft = Math.max(0, Math.min(startLeft + e.clientX - startX, camWrap.clientWidth - roiBox.offsetWidth));
-    let newTop = Math.max(0, Math.min(startTop + e.clientY - startY, camWrap.clientHeight - roiBox.offsetHeight));
-    roiBox.style.left = newLeft + 'px'; roiBox.style.top = newTop + 'px';
+    if (isResizing) {{
+      let newW = Math.max(20, Math.min(startW + e.clientX - startX, camWrap.clientWidth - roiBox.offsetLeft));
+      let newH = Math.max(20, Math.min(startH + e.clientY - startY, camWrap.clientHeight - roiBox.offsetTop));
+      roiBox.style.width = newW + 'px'; roiBox.style.height = newH + 'px';
+    }} else if (isDragging) {{
+      let newLeft = Math.max(0, Math.min(startLeft + e.clientX - startX, camWrap.clientWidth - roiBox.offsetWidth));
+      let newTop = Math.max(0, Math.min(startTop + e.clientY - startY, camWrap.clientHeight - roiBox.offsetHeight));
+      roiBox.style.left = newLeft + 'px'; roiBox.style.top = newTop + 'px';
+    }}
   }});
 
-  document.addEventListener('mouseup', function {{
-    if (isDragging) {{ isDragging = false; saveRoi; }}
+  document.addEventListener('mouseup', function() {{
+    if (isDragging || isResizing) {{
+      isDragging = false; isResizing = false; saveRoi();
+    }}
   }});
 
-  function saveRoi {{
+  function saveRoi() {{
     roiData = {{ x: roiBox.offsetLeft / camWrap.clientWidth, y: roiBox.offsetTop / camWrap.clientHeight, w: roiBox.offsetWidth / camWrap.clientWidth, h: roiBox.offsetHeight / camWrap.clientHeight }};
     fetch('/set_settings', {{ method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{ "roi": roiData }}) }});
   }}
+
   // ===================== SETTINGS =====================
   const IOT2_IP = '192.168.137.199'; // IP tinh Mạch 2
 
-  function toggleConfig {{
+  function toggleConfig() {{
     const panel = document.getElementById('config_panel');
     panel.classList.toggle('active');
   }}
 
-  function saveSettings {{
+  function saveSettings() {{
     const url = document.getElementById('cam_url').value;
     const api_key = document.getElementById('gemini_api_key').value;
     const ai_mode = document.getElementById('ai_mode').value;
@@ -368,54 +408,54 @@ def get_html(controller):
         "enable_firebase": en_fire,
         "enable_telegram": en_tele
       }})
-    }}).then(r=>r.json).then(d=>{{
+    }}).then(r=>r.json()).then(d=>{{
       document.getElementById('save_msg').innerText = d.success ? ' Đã lưu Cài đặt!' : ' Lỗi lưu!';
-      setTimeout(=>document.getElementById('save_msg').innerText='', 3000);
+      setTimeout(()=>document.getElementById('save_msg').innerText='', 3000);
     }}).catch(e => {{
       console.error(e);
       document.getElementById('save_msg').innerText = ' Lỗi Mạng/Server!';
-      setTimeout(=>document.getElementById('save_msg').innerText='', 3000);
+      setTimeout(()=>document.getElementById('save_msg').innerText='', 3000);
     }});
   }}
   // ===================== GATE CONTROL =====================
   function gate(path) {{
     toast('Dang gui lenh...');
     fetch(path)
-      .then(r=>r.json)
+      .then(r=>r.json())
       .then(d=>{{
         if(d.success) toast(' Đã gửi lệnh cổng!');
         else toast(' Lỗi: ' + d.error);
       }})
-      .catch(=>toast(' Không thể gửi lệnh!'));
+      .catch(()=>toast(' Không thể gửi lệnh!'));
   }}
 
   // ===================== CAPTURE ONLY =====================
-  function doCapture {{
+  function doCapture() {{
     const el = document.getElementById('ocr_result');
     const btn = document.getElementById('btn_capture');
     el.style.color = '#fbbf24';
     el.innerText = '📷 Dang chup anh...';
     btn.disabled = true;
-    fetch('/capture_only').then(r=>r.json).then(d=>{{
+    fetch('/capture_only').then(r=>r.json()).then(d=>{{
       btn.disabled = false;
       if (d.success) {{
         el.style.color = '#10b981';
         el.innerText = ' Chup anh thanh cong!';
-        document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now;
+        document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now();
         document.getElementById('cam_view').style.opacity = '1';
       }} else {{
         el.style.color = '#ef4444';
         el.innerText = ' ' + d.error;
       }}
-    }}).catch(=>{{ btn.disabled=false; el.style.color='#ef4444'; el.innerText=' Loi ket noi server!'; }});
+    }}).catch(()=>{{ btn.disabled=false; el.style.color='#ef4444'; el.innerText=' Loi ket noi server!'; }});
   }}
 
   // ===================== OCR =====================
   let ocrController = null;
 
-  function abortOCR {{
+  function abortOCR() {{
     if (ocrController) {{
-      ocrController.abort;
+      ocrController.abort();
       ocrController = null;
     }}
     const el = document.getElementById('ocr_result');
@@ -428,24 +468,24 @@ def get_html(controller):
     toast('Đã hủy tiến trình AI');
   }}
 
-  function doOCR {{
+  function doOCR() {{
     const el = document.getElementById('ocr_result');
     const btn = document.getElementById('btn_ocr');
     el.style.color = '#fbbf24';
     el.innerText = ' Dang chup anh...';
     btn.disabled = true;
     
-    fetch('/capture_only').then(r=>r.json).then(d=>{{
+    fetch('/capture_only').then(r=>r.json()).then(d=>{{
       if (d.success) {{
-        document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now;
+        document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now();
         document.getElementById('cam_view').style.opacity = '1';
         
         el.innerText = ' Da chup. Dang nhan dien bien so... (Vui long doi)';
         document.getElementById('btn_ocr').style.display = 'none';
         document.getElementById('btn_abort').style.display = 'inline-block';
         
-        ocrController = new AbortController;
-        fetch('/process_latest', {{ signal: ocrController.signal }}).then(r2=>r2.json).then(d2=>{{
+        ocrController = new AbortController();
+        fetch('/process_latest', {{ signal: ocrController.signal }}).then(r2=>r2.json()).then(d2=>{{
           btn.disabled = false;
           document.getElementById('btn_ocr').style.display = 'inline-block';
           document.getElementById('btn_abort').style.display = 'none';
@@ -472,15 +512,15 @@ def get_html(controller):
         el.style.color = '#ef4444';
         el.innerText = ' ' + d.error;
       }}
-    }}).catch(=>{{ btn.disabled=false; el.style.color='#ef4444'; el.innerText=' Loi ket noi chup anh!'; }});
+    }}).catch(()=>{{ btn.disabled=false; el.style.color='#ef4444'; el.innerText=' Loi ket noi chup anh!'; }});
   }}
 
   // ===================== LIVE UPDATE =====================
   let lastCaptureTs = 0;
   let lastVioTs   = null;
 
-  function updateStats {{
-    fetch('/get_stats').then(r=>r.json).then(d=>{{
+  function updateStats() {{
+    fetch('/get_stats').then(r=>r.json()).then(d=>{{
       // AI status
       const bar = document.getElementById('ai_status_bar');
       if (d.ai_ready) {{
@@ -494,7 +534,7 @@ def get_html(controller):
       // Anh moi nhat
       if (d.last_capture_ts && d.last_capture_ts !== lastCaptureTs) {{
         lastCaptureTs = d.last_capture_ts;
-        document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now;
+        document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now();
         document.getElementById('cam_view').style.opacity = '1';
       }}
 
@@ -510,35 +550,40 @@ def get_html(controller):
         const img = document.getElementById('result_img');
         const ph = document.getElementById('result_placeholder');
         if (v.image && v.image !== 'no_image.jpg') {{
-          img.src = '/captures/' + v.image + '?t=' + Date.now;
+          img.src = '/captures/' + v.image + '?t=' + Date.now();
           img.style.display = 'block'; ph.style.display = 'none';
         }} else {{
           img.style.display = 'none'; ph.style.display = 'flex';
         }}
       }}
-    }}).catch(=>{{}});
+    }}).catch(()=>{{}});
   }}
 
   setInterval(updateStats, 2000);
-  updateStats;
+  updateStats();
 
-  function logout {{
-    fetch('/logout', {{method: 'POST'}}).then(=> window.location.reload);
+  function logout() {{
+    fetch('/logout', {{method: 'POST'}}).then(()=> window.location.reload);
   }}
   // TABS LOGIC
   function switchTab(tabId) {{
-    document.getElementById('tab_system').style.display = tabId === 'system' ? 'block' : 'none';
-    document.getElementById('tab_stranger').style.display = tabId === 'stranger' ? 'block' : 'none';
-    document.getElementById('btn_tab_system').className = tabId === 'system' ? 'tab-btn active' : 'tab-btn';
-    document.getElementById('btn_tab_stranger').className = tabId === 'stranger' ? 'tab-btn active' : 'tab-btn';
-    if (tabId === 'stranger') loadStrangers;
+    const tabs = ['system', 'stranger', 'history', 'offline'];
+    tabs.forEach(t => {{
+      const el = document.getElementById('tab_' + t);
+      const btn = document.getElementById('btn_tab_' + t);
+      if(el) el.style.display = (t === tabId) ? 'block' : 'none';
+      if(btn) btn.className = (t === tabId) ? 'tab-btn active' : 'tab-btn';
+    }});
+    if (tabId === 'stranger') loadStrangers();
+    if (tabId === 'offline') loadOfflineQueue();
+    if (tabId === 'history') loadHistory();
   }}
   
   
   // ===================== OFFLINE QUEUE LOGIC =====================
-  function loadOfflineQueue {{
+  function loadOfflineQueue() {{
     document.getElementById('offline_list').innerHTML = '<p style="text-align:center; color:#64748b;">Đang đọc file CSV...</p>';
-    fetch('/api/offline_queue').then(r=>r.json).then(d => {{
+    fetch('/api/offline_queue').then(r=>r.json()).then(d => {{
       if(!d.success) {{
         document.getElementById('offline_list').innerHTML = `<p style="color:#ef4444;">Lỗi: ${{d.error}}</p>`;
         return;
@@ -559,23 +604,56 @@ def get_html(controller):
         html += `<div style="display:flex; padding:10px; border-bottom:1px solid #1e293b;">`;
         html += `<div style="width:30%; font-size:0.85rem; color:#94a3b8;">${{timeStr}}</div>`;
         html += `<div style="width:30%; font-weight:bold; color:#00d2ff;">${{item.plate}}</div>`;
-        html += `<div style="width:40%; font-size:0.8rem; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${{item.img_path}}</div>`;
+        html += `<div style="width:40%; font-size:0.8rem; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${{item.image_path}}">${{item.image_path.split(/\\\\|\\//).pop()}}</div>`;
         html += `</div>`;
       }});
       html += '</div>';
       document.getElementById('offline_list').innerHTML = html;
+    }}).catch(e => {{
+      document.getElementById('offline_list').innerHTML = '<p style="color:#ef4444;">Không thể đọc file CSV</p>';
+    }});
+  }}
+
+  // ===================== HISTORY LOGIC =====================
+  function loadHistory() {{
+    document.getElementById('history_list').innerHTML = '<p style="text-align:center; color:#64748b;">Đang kéo dữ liệu từ Đám mây...</p>';
+    fetch('/api/history').then(r=>r.json()).then(d => {{
+      if(!d.success) {{
+        document.getElementById('history_list').innerHTML = `<p style="color:#ef4444;">Lỗi: ${{d.error}}</p>`;
+        return;
+      }}
+      const data = d.data;
+      if(data.length === 0) {{
+        document.getElementById('history_list').innerHTML = '<p style="text-align:center; color:#10b981;">Chưa có lịch sử xe qua trạm.</p>';
+        return;
+      }}
       
-      // Update badge
-      let badge = document.getElementById('offline_badge');
-      badge.innerText = data.length;
-      badge.style.display = 'inline-block';
+      let html = '<div style="background:#0f172a; border:1px solid #334155; border-radius:8px; overflow:hidden;">';
+      html += '<div style="display:flex; padding:10px; background:#1e293b; font-weight:bold; border-bottom:1px solid #334155;">';
+      html += '<div style="width:20%">Ảnh</div><div style="width:30%">Thời gian</div><div style="width:30%">Biển số</div></div>';
+      
+      data.forEach(item => {{
+        let timeStr = new Date(parseInt(item.timestamp)).toLocaleString('vi-VN');
+        let imgTag = `<img src="data:image/jpeg;base64,${{item.image_base64}}" style="width:50px; height:50px; object-fit:cover; border-radius:4px;">`;
+        if(!item.image_base64) imgTag = `<span style="color:#64748b; font-size:0.8rem;">(No image)</span>`;
+        
+        html += `<div style="display:flex; align-items:center; padding:10px; border-bottom:1px solid #1e293b;">`;
+        html += `<div style="width:20%;">${{imgTag}}</div>`;
+        html += `<div style="width:30%; font-size:0.85rem; color:#94a3b8;">${{timeStr}}</div>`;
+        html += `<div style="width:30%; font-size:1.1rem; color:#fff; font-weight:bold;">${{item.plate}}</div>`;
+        html += `</div>`;
+      }});
+      html += '</div>';
+      document.getElementById('history_list').innerHTML = html;
+    }}).catch(e => {{
+      document.getElementById('history_list').innerHTML = '<p style="color:#ef4444;">Không thể kết nối Server để lấy Lịch Sử</p>';
     }});
   }}
 
   // STRANGERS LOGIC
-  function loadStrangers {{
+  function loadStrangers() {{
     document.getElementById('stranger_list').innerHTML = '<p style="text-align:center; color:#64748b;">Đang tải...</p>';
-    fetch('/api/strangers').then(r=>r.json).then(data => {{
+    fetch('/api/strangers').then(r=>r.json()).then(data => {{
       if(data.error) {{
         document.getElementById('stranger_list').innerHTML = `<p style="color:#ef4444;">Lỗi: ${{data.error}}</p>`;
         return;
@@ -587,7 +665,7 @@ def get_html(controller):
         let item = data[key];
         let timeStr = new Date(item.timestamp).toLocaleString('vi-VN');
         html += `
-        <div class="stranger-item">
+        <div class="stranger-item" id="stranger_item_${{key}}">
           <img src="data:image/jpeg;base64,${{item.image_base64}}" class="stranger-img">
           <div class="stranger-info">
             <div style="margin-bottom: 8px;">
@@ -623,8 +701,22 @@ def get_html(controller):
     fetch('/api/stranger/action', {{
       method: 'POST', headers: {{'Content-Type': 'application/json'}},
       body: JSON.stringify({{ key: key, plate: plate, action: action }})
-    }}).then(r=>r.json).then(d => {{
-      if(d.success) loadStrangers;
+    }}).then(r=>r.json()).then(d => {{
+      if(d.success) {{
+        const el = document.getElementById('stranger_item_' + key);
+        if(el) el.remove();
+        let badge = document.getElementById('stranger_badge');
+        if(badge) {{
+          let count = parseInt(badge.innerText) || 0;
+          if(count> 0) count--;
+          badge.innerText = count;
+          badge.style.display = count> 0 ? 'inline-block' : 'none';
+        }}
+        // Neu het sach thi show message
+        if(document.querySelectorAll('.stranger-item').length === 0) {{
+          document.getElementById('stranger_list').innerHTML = '<p style="text-align:center; color:#10b981;">Tuyệt vời! Không có xe lạ nào tồn đọng.</p>';
+        }}
+      }}
       else alert("Lỗi: " + d.error);
     }});
   }}
@@ -636,12 +728,12 @@ def get_html(controller):
     fetch('/api/stranger/action', {{
       method: 'POST', headers: {{'Content-Type': 'application/json'}},
       body: JSON.stringify({{ key: key, plate: plate, action: 'recheck' }})
-    }}).then(r=>r.json).then(d=> {{
+    }}).then(r=>r.json()).then(d=> {{
       if(d.success) {{
         if(d.result === 'known') {{
           alert(' Đã xác nhận đây là xe quen! Hệ thống đã tự động gửi thông báo Telegram cho người dùng.');
           const el = document.getElementById('stranger_item_' + key);
-          if(el) el.remove;
+          if(el) el.remove();
           let badge = document.getElementById('stranger_badge');
           if(badge) {{
             let count = parseInt(badge.innerText) || 0;
@@ -694,18 +786,18 @@ def get_login_html(controller):
 <body>
   <div class="login-box">
     <h2> VETC ADMIN</h2>
-    <input type="password" id="pwd" placeholder="Nhập mật khẩu..." onkeypress="if(event.key==='Enter') doLogin">
-    <button onclick="doLogin">ĐĂNG NHẬP</button>
+    <input type="password" id="pwd" placeholder="Nhập mật khẩu..." onkeypress="if(event.key==='Enter') doLogin()">
+    <button onclick="doLogin()">ĐĂNG NHẬP</button>
     <div id="error_msg"></div>
   </div>
   <script>
-    function doLogin {{
+    function doLogin() {{
       const pwd = document.getElementById('pwd').value;
       fetch('/login', {{
         method: 'POST', headers: {{'Content-Type': 'application/json'}},
         body: JSON.stringify({{password: pwd}})
-      }}).then(r=>r.json).then(d => {{
-        if(d.success) window.location.reload;
+      }}).then(r=>r.json()).then(d => {{
+        if(d.success) window.location.reload();
         else document.getElementById('error_msg').innerText = " Sai mật khẩu!";
       }});
     }}

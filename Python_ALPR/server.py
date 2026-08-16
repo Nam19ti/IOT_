@@ -206,6 +206,36 @@ def create_app(controller):
                 return send_file(path, mimetype='text/csv')
             return send_file(path, mimetype='image/jpeg')
         return "Not found", 404
+        
+    @app.route('/api/history')
+    def api_history():
+        """Trả về 50 lịch sử nhận diện gần nhất từ MongoDB"""
+        from cloud import MongoDBClient
+        if not controller.config.get("enable_firebase", True):
+            return jsonify({"success": False, "error": "Đám mây đang tắt. Chỉ lưu nội bộ."})
+        mongo_uri = controller.config.get("mongo_uri", "").strip()
+        if not mongo_uri:
+            return jsonify({"success": False, "error": "Chưa cấu hình MongoDB URI."})
+        try:
+            db_client = MongoDBClient(mongo_uri)
+            db = db_client.get_database()
+            if db is None:
+                return jsonify({"success": False, "error": "Không thể kết nối MongoDB."})
+            
+            records = list(db['history'].find().sort("timestamp", -1).limit(50))
+            data = []
+            for r in records:
+                # Get the base64 image or just rely on the history URL if we synced it
+                # actually, history objects in Mongo have "plate", "timestamp", "image_base64"
+                item = {
+                    "plate": r.get("plate", ""),
+                    "timestamp": r.get("timestamp", 0),
+                    "image_base64": r.get("image_base64", "")
+                }
+                data.append(item)
+            return jsonify({"success": True, "data": data})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)})
     @app.route('/get_stats')
     def get_stats():
         """
@@ -252,9 +282,14 @@ def create_app(controller):
 
     @app.route('/open_gate', methods=['GET', 'POST'])
     def open_gate():
-        import requests
+        import requests, threading, time
         try:
             requests.get("http://192.168.137.199/open_gate", timeout=3)
+            def auto_close():
+                time.sleep(3)
+                try: requests.get("http://192.168.137.199/close_gate", timeout=3)
+                except: pass
+            threading.Thread(target=auto_close).start()
             return jsonify({"success": True})
         except:
             return jsonify({"success": False, "error": "Khong the ket noi den ESP32"})
