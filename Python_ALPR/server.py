@@ -8,7 +8,6 @@ from core import SystemController, p
 from camera import CameraClient
 from ai import HybridOCR
 from cloud import CloudSync
-from mqtt_service import MQTTService
 
 def create_app(controller):
     app = Flask(__name__)
@@ -138,7 +137,6 @@ if __name__ == '__main__':
     # 2. Lien ket cac module
     controller.camera = CameraClient(controller.config.get("ip_camera_url"))
     controller.cloud = CloudSync(controller.config.get("tb_token"))
-    controller.mqtt = MQTTService(controller)
     
     # 3. Load AI (Background)
     threading.Thread(target=load_ai_bg, args=(controller,), daemon=True).start()

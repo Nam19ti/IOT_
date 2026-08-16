@@ -1,7 +1,5 @@
 def get_html(controller):
     cam_url = controller.config.get('ip_camera_url', '')
-    gem_key = controller.config.get('gemini_api_key', '')
-    tb_tok = controller.config.get('tb_token', '')
     
     return f"""<!DOCTYPE html>
 <html lang="vi">
@@ -64,8 +62,8 @@ def get_html(controller):
 </head>
 <body>
     <header>
-        <h1>ALPR SYSTEM - CORE V2</h1>
-        <p>Zero-Crash Architecture &nbsp;|&nbsp; Job Queue &nbsp;|&nbsp; Hybrid AI</p>
+        <h1>ALPR SYSTEM - LAN OFFLINE</h1>
+        <p>100% LAN HTTP &nbsp;|&nbsp; EasyOCR Offline</p>
     </header>
 
     <div id="ai_status_bar">AI dang khoi dong... Vui long doi!</div>
@@ -74,7 +72,7 @@ def get_html(controller):
         <div class="card">
             <div class="card-title" style="display:flex; justify-content:space-between;">
                 <span>&#128247; VI PHAM MOI NHAT</span>
-                <span id="queue_status" style="font-size:0.8rem; color:var(--warn);">Hang doi: 0 xe</span>
+                <span id="queue_status" style="font-size:0.8rem; color:var(--success);">Trang thai: OK</span>
             </div>
             <div class="vio-grid">
                 <div>
@@ -188,7 +186,7 @@ def get_html(controller):
                 bar.innerText = 'AI DANG KHOI DONG... (Cho 1 phut)';
             }}
             
-            document.getElementById('queue_status').innerText = 'Hang doi: ' + d.queue_size + ' xe';
+            document.getElementById('queue_status').innerText = 'Trang thai: OK';
 
             // Hien thi anh chup gan nhat
             if (d.last_capture_ts && d.last_capture_ts !== localLastCaptureTs) {{

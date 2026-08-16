@@ -62,6 +62,16 @@ void beepBuzzer() {
   digitalWrite(buzzerPin, LOW);
 }
 
+// Còi hú báo động (kêu dồn dập)
+void alarmBuzzer() {
+  for (int i = 0; i < 10; i++) {
+    digitalWrite(buzzerPin, HIGH);
+    delay(50);
+    digitalWrite(buzzerPin, LOW);
+    delay(50);
+  }
+}
+
 // Mở cổng
 void openGate() {
   if (!isGateOpen) {
@@ -73,9 +83,20 @@ void openGate() {
   }
 }
 
+// Kiểm tra xem có xe đang nằm dưới cổng (CB2) không
+bool isCarUnderGate() {
+  float d2 = getDistance(trigPin2, echoPin2);
+  return (d2 < 20.0) || (baseline2 - d2 > THRESHOLD);
+}
+
 // Đóng cổng
 void closeGate() {
   if (isGateOpen) {
+    if (isCarUnderGate()) {
+      Serial.println(">> [CANH BAO] CO XE DUOI CONG! TU CHOI DONG CONG DE AN TOAN!");
+      alarmBuzzer(); // Còi hú báo động liên tục
+      return;
+    }
     Serial.println(">> DONG CONG");
     gateServo.write(0); // Trở về 0 độ để đóng
     beepBuzzer();
@@ -102,6 +123,11 @@ float getDistance(int trig, int echo) {
 // Lấy mẫu nền
 void calibrateBackground() {
   Serial.println(">> Dang lay mau nen...");
+  Serial2.println("STATE:CALIBRATING"); // Báo cho IOT_2 hiển thị LCD
+  
+  // Đợi 2 giây để người dùng tránh xa vùng cảm biến
+  delay(2000);
+  
   float sum1 = 0, sum2 = 0;
   int valid1 = 0, valid2 = 0;
   
@@ -118,6 +144,7 @@ void calibrateBackground() {
   if (valid2 > 0) baseline2 = sum2 / valid2; else baseline2 = 200;
   
   Serial.printf(">> NEN 1: %.1f cm | NEN 2: %.1f cm\n", baseline1, baseline2);
+  Serial2.println("STATE:CLOSED"); // Khôi phục LCD
 }
 
 // =========================================================
@@ -162,9 +189,17 @@ void loop() {
     String msg = Serial2.readStringUntil('\n');
     msg.trim();
     if (msg == "OPEN") {
+      Serial.println(">> [UART] Nhan lenh MO CONG (Tu Dong Dong)");
       openGate();
+      isManualMode = false; // Mở tự động, sẽ đóng tự động
+    } else if (msg == "OPEN_MANUAL") {
+      Serial.println(">> [UART] Nhan lenh MO CONG (Khong Tu Dong Dong)");
+      openGate();
+      isManualMode = true; // Mở thủ công, KHÔNG đóng tự động
     } else if (msg == "CLOSE") {
+      Serial.println(">> [UART] Nhan lenh DONG CONG");
       closeGate();
+      isManualMode = false; // Reset chế độ
     }
   }
 

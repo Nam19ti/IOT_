@@ -48,10 +48,30 @@
             -webkit-text-fill-color: transparent;
         }
 
+        .admin-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin-top: 1rem;
+        }
+
         .container {
-            max-width: 1200px;
-            margin: 2rem auto;
-            padding: 0 1rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .remote-panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        .remote-panel h2 {
+            margin-top: 0;
+            color: #f1f5f9;
         }
 
         .grid {
@@ -185,6 +205,19 @@
     </header>
 
     <div class="container">
+        
+        <div class="remote-panel">
+            <h2>🌍 ĐIỀU KHIỂN CỔNG TỪ XA QUA THINGSBOARD CLOUD</h2>
+            <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem;">Hệ thống đã kết nối thành công tới <b>ThingsBoard RPC</b>.</p>
+            <p style="color: #f1f5f9; font-size: 1rem; text-align: left; background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px;">
+                <b>Hướng dẫn cấu hình trên ThingsBoard:</b><br/>
+                1. Đăng nhập vào ThingsBoard Dashboard của bạn.<br/>
+                2. Thêm một Widget mới dạng <b>Control widgets -> RPC Button</b>.<br/>
+                3. Ở mục <i>RPC method name</i>, điền một trong 3 lệnh sau: <b>OPEN</b> (Tự đóng sau 3s), <b>OPEN_MANUAL</b> (Mở mãi mãi), hoặc <b>CLOSE</b> (Đóng gấp).<br/>
+                4. Nhấn nút trên ThingsBoard để điều khiển trực tiếp Trạm thu phí ở nhà!
+            </p>
+        </div>
+
         <h2 style="border-bottom: 1px solid var(--glass-border); padding-bottom: 1rem;">Lịch sử Giao dịch Gần đây</h2>
         <div class="grid" id="transactions-grid">
             <!-- Dữ liệu load qua JS -->

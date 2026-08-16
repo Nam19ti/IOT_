@@ -102,11 +102,10 @@ async function processFirebaseQueue() {
         }
     } catch (error) {
         console.error('❌ Lỗi kết nối Firebase Queue:', error.message);
-    }
-}
-
-// Quét (Pull) Firebase mỗi 3 giây
-setInterval(processFirebaseQueue, 3000);
+// Quét (Pull) Firebase Queue mỗi 3 giây
+setInterval(() => {
+    processFirebaseQueue();
+}, 3000);
 
 
 // ==========================================
