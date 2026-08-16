@@ -62,8 +62,8 @@ def get_html(controller):
             color: #38bdf8; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; }}
     
     /* === ROI BOX === */
-    .roi-box { position: absolute; border: 2px dashed #00d2ff; background: rgba(0, 210, 255, 0.15); cursor: move; }
-    .stranger-checkbox { width: 20px; height: 20px; cursor: pointer; accent-color: #ef4444; }
+    .roi-box {{ position: absolute; border: 2px dashed #00d2ff; background: rgba(0, 210, 255, 0.15); cursor: move; }}
+    .stranger-checkbox {{ width: 20px; height: 20px; cursor: pointer; accent-color: #ef4444; }}
     /* === WIDGET CAU HINH === */
     .config-widget {{ display: none; margin-top: 1rem; padding: 1rem; background: #1e293b; border-radius: 8px; border: 1px solid #334155; }}
     .config-widget.active {{ display: block; }}
