@@ -423,37 +423,45 @@ def get_html(controller):
       setTimeout(()=>document.getElementById('save_msg').innerText='', 3000);
     }});
   }}
-  // ===================== GATE CONTROL =====================
-  function gate(path) {{
-    toast('Dang gui lenh...');
-    fetch(path)
-      .then(r=>r.json())
-      .then(d=>{{
-        if(d.success) toast(' Đã gửi lệnh cổng!');
-        else toast(' Lỗi: ' + d.error);
-      }})
-      .catch(()=>toast(' Không thể gửi lệnh!'));
-  }}
-
   // ===================== CAPTURE ONLY =====================
   function doCapture() {{
     const el = document.getElementById('ocr_result');
     const btn = document.getElementById('btn_capture');
-    el.style.color = '#fbbf24';
-    el.innerText = '📷 Dang chup anh...';
-    btn.disabled = true;
+    if (el) {{
+      el.style.color = '#fbbf24';
+      el.innerText = ' Dang chup anh từ IP Camera...';
+    }}
+    if (btn) btn.disabled = true;
+    toast('Đang kết nối camera để chụp ảnh...');
+    
     fetch('/capture_only').then(r=>r.json()).then(d=>{{
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
       if (d.success) {{
-        el.style.color = '#10b981';
-        el.innerText = ' Chup anh thanh cong!';
-        document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now();
-        document.getElementById('cam_view').style.opacity = '1';
+        if (el) {{
+          el.style.color = '#10b981';
+          el.innerText = ' Chụp ảnh thành công!';
+        }}
+        toast('Chụp ảnh thành công!');
+        const camView = document.getElementById('cam_view');
+        if (camView) {{
+          camView.src = '/captures/latest_capture.jpg?t=' + Date.now();
+          camView.style.opacity = '1';
+        }}
       }} else {{
-        el.style.color = '#ef4444';
-        el.innerText = ' ' + d.error;
+        if (el) {{
+          el.style.color = '#ef4444';
+          el.innerText = ' ' + d.error;
+        }}
+        toast('Lỗi camera: ' + d.error);
       }}
-    }}).catch(()=>{{ btn.disabled=false; el.style.color='#ef4444'; el.innerText=' Loi ket noi server!'; }});
+    }}).catch(err=>{{
+      if (btn) btn.disabled = false;
+      if (el) {{
+        el.style.color='#ef4444';
+        el.innerText=' Lỗi kết nối server!';
+      }}
+      toast('Lỗi kết nối server!');
+    }});
   }}
 
   // ===================== OCR =====================
@@ -465,56 +473,78 @@ def get_html(controller):
       ocrController = null;
     }}
     const el = document.getElementById('ocr_result');
-    el.innerText = ' Đã hủy nhận diện!';
-    el.style.color = '#ef4444'; 
+    if (el) {{
+      el.innerText = ' Đã hủy nhận diện!';
+      el.style.color = '#ef4444'; 
+    }}
     
-    document.getElementById('btn_ocr').disabled = false;
-    document.getElementById('btn_ocr').style.display = 'inline-block';
-    document.getElementById('btn_abort').style.display = 'none';
+    const btnOcr = document.getElementById('btn_ocr');
+    const btnAbort = document.getElementById('btn_abort');
+    if (btnOcr) {{
+      btnOcr.disabled = false;
+      btnOcr.style.display = 'inline-block';
+    }}
+    if (btnAbort) btnAbort.style.display = 'none';
     toast('Đã hủy tiến trình AI');
   }}
 
   function doOCR() {{
     const el = document.getElementById('ocr_result');
     const btn = document.getElementById('btn_ocr');
-    el.style.color = '#fbbf24';
-    el.innerText = ' Dang chup anh...';
-    btn.disabled = true;
+    if (el) {{
+      el.style.color = '#fbbf24';
+      el.innerText = ' Dang chup anh...';
+    }}
+    if (btn) btn.disabled = true;
+    toast('Đang chụp ảnh & nhận diện AI...');
     
     fetch('/capture_only').then(r=>r.json()).then(d=>{{
       if (d.success) {{
-        document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now();
-        document.getElementById('cam_view').style.opacity = '1';
+        const camView = document.getElementById('cam_view');
+        if (camView) {{
+          camView.src = '/captures/latest_capture.jpg?t=' + Date.now();
+          camView.style.opacity = '1';
+        }}
         
-        el.innerText = ' Da chup. Dang nhan dien bien so... (Vui long doi)';
-        document.getElementById('btn_ocr').style.display = 'none';
-        document.getElementById('btn_abort').style.display = 'inline-block';
+        if (el) el.innerText = ' Đã chụp. Đang nhận diện biển số... (Vui lòng đợi)';
+        const btnAbort = document.getElementById('btn_abort');
+        if (btn) btn.style.display = 'none';
+        if (btnAbort) btnAbort.style.display = 'inline-block';
         
         ocrController = new AbortController();
         fetch('/process_latest', {{ signal: ocrController.signal }}).then(r2=>r2.json()).then(d2=>{{
-          btn.disabled = false;
-          document.getElementById('btn_ocr').style.display = 'inline-block';
-          document.getElementById('btn_abort').style.display = 'none';
+          if (btn) {{
+            btn.disabled = false;
+            btn.style.display = 'inline-block';
+          }}
+          if (btnAbort) btnAbort.style.display = 'none';
           if (d2.success) {{
-            el.style.color = '#10b981';
-            el.innerText = ' Bien so: ' + d2.plate + ' (' + d2.time + 's)';
+            if (el) {{
+              el.style.color = '#10b981';
+              el.innerText = ' Biển số: ' + d2.plate + ' (' + d2.time + 's)';
+            }}
+            toast('Nhận diện thành công: ' + d2.plate);
           }} else {{
-            el.style.color = '#ef4444';
-            el.innerText = ' ' + d2.error;
+            if (el) {{
+              el.style.color = '#ef4444';
+              el.innerText = ' ' + d2.error;
+            }}
+            toast('Lỗi: ' + d2.error);
           }}
         }}).catch(e=>{{ 
-          btn.disabled=false; 
-          document.getElementById('btn_ocr').style.display = 'inline-block';
-          document.getElementById('btn_abort').style.display = 'none';
-          if(e.name === 'AbortError') {{
-            console.log('Fetch aborted');
-          }} else {{
-            el.style.color='#ef4444'; el.innerText=' Loi ket noi nhan dien!'; 
+          if (btn) {{
+            btn.disabled = false;
+            btn.style.display = 'inline-block';
+          }}
+          if (btnAbort) btnAbort.style.display = 'none';
+          if (e.name !== 'AbortError') {{
+            if (el) {{
+              el.style.color='#ef4444';
+              el.innerText=' Lỗi kết nối AI!';
+            }}
+            toast('Lỗi kết nối AI!');
           }}
         }});
-        
-      }} else {{
-        btn.disabled = false;
         el.style.color = '#ef4444';
         el.innerText = ' ' + d.error;
       }}
