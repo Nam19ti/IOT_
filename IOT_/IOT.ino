@@ -27,11 +27,20 @@ const float THRESHOLD = 20.0; // Xe được nhận diện khi khoảng cách th
 const float SPEED_CONST = 0.017;
 
 bool isGateOpen = false;
-bool carInside = false; // Trạng thái xe đang trong vùng quét
+bool carInside = false; // Trạng thái xe đang trong vùng quét (Đã qua CB1)
+bool carAtGate = false; // Trạng thái xe đang nằm ngay dưới cổng (Đang chắn CB2)
 
 // Chống dội nút bấm
-unsigned long lastBtnPress = 0;
-bool lastBtnState = HIGH;
+volatile bool buttonPressed = false;
+volatile unsigned long lastInterruptTime = 0;
+
+void IRAM_ATTR handleButtonInterrupt() {
+  unsigned long interruptTime = millis();
+  if (interruptTime - lastInterruptTime > 500) { // Debounce 500ms
+    buttonPressed = true;
+    lastInterruptTime = interruptTime;
+  }
+}
 
 // Chống dội cảm biến
 unsigned long lastCarInTime = 0;
@@ -58,6 +67,7 @@ void openGate() {
     gateServo.write(90); // Xoay 90 độ để mở
     beepBuzzer();
     isGateOpen = true;
+    Serial2.println("STATE:OPEN"); // Báo trạng thái cho IOT_2
   }
 }
 
@@ -70,6 +80,7 @@ void closeGate() {
     delay(100);
     beepBuzzer();
     isGateOpen = false;
+    Serial2.println("STATE:CLOSED"); // Báo trạng thái cho IOT_2
   }
 }
 
@@ -119,6 +130,7 @@ void setup() {
   
   pinMode(buzzerPin, OUTPUT);
   pinMode(buttonPin, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(buttonPin), handleButtonInterrupt, FALLING);
   
   gateServo.setPeriodHertz(50); // Tần số 50Hz cho Servo chuẩn
   gateServo.attach(servoPin, 500, 2400); 
@@ -131,14 +143,12 @@ void setup() {
 }
 
 void loop() {
-  // 1. Kiểm tra Nút bấm thủ công
-  bool currentBtnState = digitalRead(buttonPin);
-  if (currentBtnState == LOW && lastBtnState == HIGH && millis() - lastBtnPress > 500) {
-    lastBtnPress = millis();
+  // 1. Kiểm tra Nút bấm thủ công (Xử lý ngay lập tức nhờ Ngắt phần cứng)
+  if (buttonPressed) {
+    buttonPressed = false;
     if (isGateOpen) closeGate();
     else openGate();
   }
-  lastBtnState = currentBtnState;
 
   // 2. Nhận lệnh từ IOT_2 (Qua UART)
   if (Serial2.available()) {
@@ -175,11 +185,23 @@ void loop() {
   
   // Logic xe đi RA (CB2)
   bool trigger2 = (d2 < 20.0) || (baseline2 - d2 > THRESHOLD);
-  if (trigger2 && carInside && millis() - lastCarOutTime > 5000) {
-    carInside = false; // Reset trạng thái
-    lastCarOutTime = millis();
-    Serial.println(">> [SENS] XE DA QUA CONG!");
-    Serial2.println("CAR_OUT"); // Báo cho IOT_2
+  
+  if (trigger2 && carInside) {
+    // Xe bắt đầu tiến vào và chắn ngang Cảm biến 2 (Đang nằm dưới Barie)
+    if (!carAtGate) {
+      carAtGate = true;
+      Serial.println(">> [SENS] XE DANG NAM DUOI CONG...");
+    }
+  } 
+  else if (!trigger2 && carAtGate) {
+    // Xe vừa đi qua hoàn toàn (Khoảng cách d2 đã trở về nền bình thường)
+    if (millis() - lastCarOutTime > 3000) { // Chống dội nhiễu
+      carAtGate = false;
+      carInside = false; // Reset chu trình
+      lastCarOutTime = millis();
+      Serial.println(">> [SENS] XE DA QUA HOAN TOAN! (Tro ve NEN)");
+      Serial2.println("CAR_OUT"); // Báo cho IOT_2 (Mạch 2 sẽ tự động đợi thêm 3s rồi đóng cổng)
+    }
   }
   
   delay(50);

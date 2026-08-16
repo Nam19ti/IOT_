@@ -161,6 +161,14 @@ void loop() {
         }
       }
     }
+    else if (msg.startsWith("STATE:")) {
+      String state = msg.substring(6);
+      if (state == "OPEN") {
+        printLCD("Trang thai Cong:", ">> DANG MO <<");
+      } else if (state == "CLOSED") {
+        printLCD("Trang thai Cong:", ">> DA DONG <<");
+      }
+    }
   }
 
   // 2. XỬ LÝ THỜI GIAN CHỜ CHỤP ẢNH (5 GIÂY)
