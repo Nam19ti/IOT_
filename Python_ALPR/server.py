@@ -60,6 +60,47 @@ def create_app(controller):
             p(f"    -> [LOI TEST]: {e}")
             return jsonify({"success": False, "error": str(e)})
 
+    @app.route('/trigger_capture')
+    def trigger_capture():
+        if not controller.ai_ready:
+            p("[WEB] Nhan tin hieu xe vao nhung AI chua san sang!")
+            return jsonify({"success": False, "error": "AI chua load xong!"})
+            
+        start = time.time()
+        p("\n[HETHONG] IOT_2 bao co xe vao! Dang chup anh tu ESP32-CAM...")
+        
+        # Thêm chút delay để xe đi vào vừa khung hình (Tùy chỉnh góc camera)
+        time.sleep(1.0)
+        
+        try:
+            frames = controller.camera.capture_frames(num_frames=3, interval=0.1)
+            if not frames:
+                p("    -> [LOI] Khong chup duoc anh tu ESP32-CAM!")
+                return jsonify({"success": False, "error": "Loi ESP32-CAM"})
+                
+            if frames and frames[0][0] is not None:
+                os.makedirs("violations", exist_ok=True)
+                cv2.imwrite("violations/latest_capture.jpg", frames[0][0])
+                controller.last_capture_ts = time.time()
+                
+            p(f"    -> Da chup {len(frames)} frame. Dang chay EasyOCR Offline...")
+            plate, engine, _ = controller.ai_engine.process_pipeline(frames)
+            elapsed = round(time.time() - start, 2)
+            controller.last_process_time = elapsed
+            
+            p(f"    -> [HOAN TAT] Bien so='{plate}' | Time={elapsed}s")
+            
+            if plate and plate not in ("Khong Nhan Dien Duoc", "Khong Thay Bien"):
+                # Đẩy lên Firebase Queue cho Node.js trừ tiền
+                controller.cloud.publish_ai_result(plate, 0, "IN", "violations/latest_capture.jpg")
+                p(f"    -> Đã đẩy giao dịch {plate} sang Node.js!")
+                
+            return jsonify({"success": True, "plate": plate})
+            
+        except Exception as e:
+            p(f"    -> [LOI TONG HOP]: {e}")
+            return jsonify({"success": False, "error": str(e)})
+
     @app.route('/set_settings', methods=['POST'])
     def set_settings():
         d = request.json
@@ -67,11 +108,6 @@ def create_app(controller):
             controller.config.set('ip_camera_url', d['url'])
             if controller.camera:
                 controller.camera.set_url(d['url'])
-        if 'api_key' in d:
-            controller.config.set('gemini_api_key', d['api_key'])
-            if controller.ai_engine:
-                controller.ai_engine._init_gemini(d['api_key'])
-            
         return jsonify({"success": True})
 
     @app.route('/')
@@ -82,11 +118,11 @@ def create_app(controller):
     return app
 
 def load_ai_bg(controller):
-    p("[HETHONG] Dang nap AI Engine (Gemini)...")
-    controller.ai_engine = HybridOCR(controller.config.get("gemini_api_key"))
+    p("[HETHONG] Dang nap AI Engine (EasyOCR Offline)...")
+    controller.ai_engine = HybridOCR()
     controller.ai_ready = True
     p("\n==========================================")
-    p("  HE THONG AI DA SAN SANG NHAN DIEN!")
+    p("  EASYOCR ĐÃ SẴN SÀNG NHẬN DIỆN 100% OFFLINE!")
     p("==========================================\n")
 
 if __name__ == '__main__':

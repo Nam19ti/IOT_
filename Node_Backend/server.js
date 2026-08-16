@@ -61,6 +61,7 @@ async function processFirebaseQueue() {
                 // 1. Kiểm tra xe trong hệ thống ETC
                 const vehicle = await Vehicle.findOne({ plate: carEvent.plate });
                 let status = 'success';
+                let iot2_action = 'deny_gate'; // Mac dinh la tu choi
 
                 if (!vehicle) {
                     console.log(`❌ Xe ${carEvent.plate} chưa đăng ký ETC!`);
@@ -73,6 +74,16 @@ async function processFirebaseQueue() {
                     vehicle.balance -= TOLL_FEE;
                     await vehicle.save();
                     console.log(`✅ Đã trừ ${TOLL_FEE}đ xe ${carEvent.plate}. Số dư mới: ${vehicle.balance}đ`);
+                    iot2_action = 'open_gate'; // Cho phep mo cong
+                }
+
+                // GỬI LỆNH ĐÓNG/MỞ CỔNG XUỐNG IOT_2 QUA MẠNG LAN
+                const iot2Ip = process.env.IOT2_IP || '192.168.137.99'; // IP cua IOT_2
+                try {
+                    console.log(`>> Đang gửi lệnh ${iot2_action} tới IOT_2 (${iot2Ip})...`);
+                    await fetch(`http://${iot2Ip}/${iot2_action}?plate=${carEvent.plate}`);
+                } catch (e) {
+                    console.error(`❌ Không thể kết nối tới IOT_2 tại ${iot2Ip}:`, e.message);
                 }
 
                 // Luu vao Lịch sử giao dịch (MongoDB)

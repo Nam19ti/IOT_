@@ -1,42 +1,31 @@
 import cv2
 import re
-import threading
-from PIL import Image
+import numpy as np
 from core import p
 
 try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
+    import easyocr
+    EASYOCR_AVAILABLE = True
 except ImportError:
-    GEMINI_AVAILABLE = False
+    EASYOCR_AVAILABLE = False
 
 VN_PLATE_RE = re.compile(r'^(\d{2,3})([A-Z]{1,2})(\d{4,5})$')
 
 OCR_FIX = {
     'O': '0', 'I': '1', 'L': '1', 'B': '8', 
-    'S': '5', 'Z': '2', 'G': '6', 'Q': '0'
+    'S': '5', 'Z': '2', 'G': '6', 'Q': '0',
+    'D': '0'
 }
 
 class HybridOCR:
     def __init__(self, api_key=""):
-        self.gemini_model = None
-        self._init_gemini(api_key)
-        
-    def _init_gemini(self, api_key):
-        if not GEMINI_AVAILABLE:
-            p("[AI] Thu vien google.generativeai chua duoc cai dat.")
-            return
-        if api_key and api_key.strip():
-            try:
-                genai.configure(api_key=api_key.strip())
-                # Google deprecated 2.5 cho user moi, nen ta dung ban moi nhat 3.5
-                self.gemini_model = genai.GenerativeModel('gemini-3.5-flash')
-                p("[AI] Gemini API san sang!")
-            except Exception as e:
-                p(f"[AI ERROR] Gemini: {e}")
-                self.gemini_model = None
+        self.reader = None
+        if EASYOCR_AVAILABLE:
+            p("[AI] Đang nạp mô hình EasyOCR (Offline) vào RAM... Vui lòng đợi.")
+            self.reader = easyocr.Reader(['en'], gpu=False) # Dùng GPU nếu có cài CUDA
+            p("[AI] EasyOCR đã sẵn sàng 100% OFFLINE!")
         else:
-            p("[AI] Khong co Gemini API Key. Vui long nhap tren Web UI.")
+            p("[AI] Thư viện EasyOCR chưa được cài đặt. Vui lòng chạy: pip install easyocr")
 
     def _fix_ocr(self, text):
         res = list(re.sub(r'[^A-Z0-9]', '', text.upper()))
@@ -73,18 +62,22 @@ class HybridOCR:
         except:
             return 0.0
 
-    def _run_gemini(self, img):
-        if not self.gemini_model: 
-            return "Thieu API Key"
+    def _run_easyocr(self, img):
+        if not self.reader: 
+            return "Thieu Thiet Lap"
         try:
-            pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-            prompt = "Read the license plate in this image. Return ONLY the alphanumeric characters without any spaces, dashes, or punctuation. Example: 51G12345"
-            res = self.gemini_model.generate_content([prompt, pil_img]).text.strip()
-            processed = self._post_process(res)
-            return processed if processed else res # Tra ve nguyen ban neu ko regex match de biet sai do dau
+            # Chạy nhận diện
+            results = self.reader.readtext(img, allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', detail=0)
+            if not results:
+                return None
+            
+            # Ghép các dòng lại với nhau (Biển số vuông thường có 2 dòng)
+            raw = "".join(results)
+            processed = self._post_process(raw)
+            return processed if processed else raw
         except Exception as e:
-            p(f"      -> [GEMINI LOI] {e}")
-            return "Loi Ket Noi"
+            p(f"      -> [EASYOCR LOI] {e}")
+            return "Loi Phan Mem"
 
     def process_pipeline(self, frames_data):
         """Xu ly nhieu anh, doc tung anh den khi ra bien so chuan"""
@@ -98,10 +91,10 @@ class HybridOCR:
         best_overall = None
         best_frame = valid_frames[0]
         
-        if not self.gemini_model:
-            return "Thieu API Key", "Gemini", best_frame
+        if not self.reader:
+            return "Chua Cai EasyOCR", "EasyOCR", best_frame
             
-        # Tinh toan do net cua tung anh va sap xep (Anh net nhat len dau)
+        # Lọc ảnh nét nhất
         scored_frames = []
         for i, frame in enumerate(valid_frames):
             score = self._get_sharpness(frame)
@@ -109,24 +102,23 @@ class HybridOCR:
             
         scored_frames.sort(key=lambda x: x[0], reverse=True)
         
-        p(f"    -> [AI] Đã lọc 3 ảnh. Bắt đầu gửi ảnh nét nhất lên Gemini...")
+        p(f"    -> [AI] Bắt đầu chạy Nhận diện Offline (EasyOCR) trên ảnh nét nhất...")
         
         for score, frame, orig_idx in scored_frames:
-            p(f"      -> Đang thử Ảnh gốc số {orig_idx} (Độ nét: {score:.1f})...")
+            p(f"      -> Đang phân tích Ảnh gốc số {orig_idx} (Độ nét: {score:.1f})...")
             
-            res = self._run_gemini(frame)
+            res = self._run_easyocr(frame)
             
-            if res and res not in ("Khong Thay Bien", "Thieu API Key", "Loi Ket Noi"):
+            if res and res not in ("Khong Thay Bien", "Thieu Thiet Lap", "Loi Phan Mem"):
                 if self._validate(res):
                     p(f"      -> [OK] Tim thay bien so chuan '{res}'!")
-                    return res, "Gemini", frame
+                    return res, "EasyOCR", frame
                 else:
                     p(f"      -> [WARN] Nhan dien ra '{res}' nhung sai dinh dang VN.")
-                    # Luu lam backup neu cac anh khac khong tot hon
                     if not best_overall:
                         best_overall = res
                         best_frame = frame
             else:
-                p(f"      -> [FAIL] Khong the doc duoc bien so.")
+                p(f"      -> [FAIL] Khong the doc duoc bien so tren anh nay.")
                 
-        return best_overall if best_overall else "Khong Nhan Dien Duoc", "Gemini", best_frame
+        return best_overall if best_overall else "Khong Nhan Dien Duoc", "EasyOCR", best_frame

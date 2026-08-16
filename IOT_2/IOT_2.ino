@@ -1,21 +1,21 @@
 #include <HardwareSerial.h>
 #include <WiFi.h>
-#include <PubSubClient.h>
-#include <ArduinoJson.h>
+#include <HTTPClient.h>
+#include <WebServer.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
 // =========================================================
-// CẤU HÌNH WIFI VÀ MQTT
+// CẤU HÌNH WIFI VÀ LAN
 // =========================================================
 const char* WIFI_SSID     = "NONNET";
 const char* WIFI_PASSWORD = "abcd1234";
 
-const char* HIVEMQ_SERVER = "broker.hivemq.com";
-const int   HIVEMQ_PORT   = 1883;
+// IP của máy tính chạy Server Python
+const char* PYTHON_SERVER_IP = "192.168.137.1"; // <-- Thay bằng IP máy tính của bạn nếu cần
+const int   PYTHON_SERVER_PORT = 5000;
 
-WiFiClient   espClient;
-PubSubClient mqttClient(espClient);
+WebServer server(80);
 
 // LCD I2C
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -23,15 +23,6 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 // UART2 giao tiếp với IOT_1
 #define UART2_TX 17
 #define UART2_RX 16
-
-// =========================================================
-// BIẾN THỜI GIAN CHỜ (TIMERS)
-// =========================================================
-unsigned long carInDetectedTime = 0;
-bool isWaitingToCapture = false;
-
-unsigned long carOutDetectedTime = 0;
-bool isWaitingToClose = false;
 
 // =========================================================
 // HÀM HIỂN THỊ LCD
@@ -44,68 +35,56 @@ void printLCD(String line1, String line2) {
 }
 
 // =========================================================
-// KẾT NỐI WIFI VÀ MQTT
+// KẾT NỐI WIFI
 // =========================================================
 unsigned long lastWifiAttempt = 0;
+bool isNetworkOffline = true;
 
-void connectWiFi() {
-  if (WiFi.status() == WL_CONNECTED) return;
+void checkWiFi() {
+  if (WiFi.status() == WL_CONNECTED) {
+    if (isNetworkOffline) {
+      printLCD("He thong SS", "IP: " + WiFi.localIP().toString());
+      isNetworkOffline = false;
+    }
+    return;
+  }
   
+  isNetworkOffline = true;
   if (millis() - lastWifiAttempt > 5000) {
     lastWifiAttempt = millis();
-    printLCD("Dang ket noi", "WiFi...");
-    Serial.println(">> Đang thử kết nối WiFi...");
+    printLCD("!! CANH BAO !!", "MAT MANG WIFI");
+    Serial.println(">> Đang thử kết nối lại WiFi...");
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
 }
 
-void maintainMQTT() {
-  if (WiFi.status() != WL_CONNECTED) {
-    connectWiFi();
-    return; // Nếu chưa có WiFi thì thoát, để vòng loop() vẫn chạy xử lý UART
-  }
+// =========================================================
+// LẮNG NGHE LỆNH TỪ PYTHON SERVER (Qua Mạng LAN)
+// =========================================================
+void handleOpenGate() {
+  // Python gọi vào đường dẫn này khi xe đủ tiền
+  // URL format: http://<IOT2_IP>/open_gate?plate=30A12345
   
-  // Nếu vừa mới kết nối xong
-  static bool wasConnected = false;
-  if (!wasConnected) {
-    printLCD("WiFi OK", WiFi.localIP().toString());
-    wasConnected = true;
+  String plate = "Chua ro";
+  if (server.hasArg("plate")) {
+    plate = server.arg("plate");
   }
+
+  printLCD(plate, "Da thu phi");
+  Serial2.println("OPEN"); // Ra lệnh cho Mạch 1 mở cổng
   
-  if (!mqttClient.connected()) {
-    printLCD("Dang ket noi", "Đám Mây MQTT...");
-    String clientId = "ESP32_Slave_VETC_" + String(random(0xffff), HEX);
-    if (mqttClient.connect(clientId.c_str())) {
-      printLCD("MQTT San sang!", "Cho xe vao tram");
-      mqttClient.subscribe("iot_thanglong/gate"); // Lắng nghe lệnh mở cổng từ Node.js
-      mqttClient.subscribe("iot_thanglong/plate"); // (Optional) Nhận kết quả biển số nếu cần
-    } else {
-      delay(2000);
-    }
-  }
-  mqttClient.loop();
+  server.send(200, "text/plain", "OK! Da mo cong.");
 }
 
-// =========================================================
-// XỬ LÝ LỆNH TỪ MÁY CHỦ (NODE.JS / PYTHON) TRẢ VỀ
-// =========================================================
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  StaticJsonDocument<256> doc;
-  DeserializationError error = deserializeJson(doc, payload, length);
-  if (error) return;
-
-  if (strcmp(topic, "iot_thanglong/gate") == 0) {
-    const char* action = doc["action"]; // "OPEN" hoặc "DENY"
-    const char* plate = doc["plate"];
-    
-    if (action && strcmp(action, "OPEN") == 0) {
-      printLCD("Xe: " + String(plate), "-> MO CONG (OK)");
-      Serial2.println("OPEN"); // Ra lệnh cho Mạch 1 mở cổng
-    } else if (action && strcmp(action, "DENY") == 0) {
-      printLCD("Xe: " + String(plate), "-> TU CHOI/HET $");
-      // Không mở cổng
-    }
+void handleDenyGate() {
+  // Python gọi vào đường dẫn này khi xe KHÔNG đủ tiền
+  String plate = "Chua ro";
+  if (server.hasArg("plate")) {
+    plate = server.arg("plate");
   }
+
+  printLCD(plate, "HET TIEN/TU CHOI");
+  server.send(200, "text/plain", "OK! Da hien thi canh bao.");
 }
 
 // =========================================================
@@ -113,81 +92,69 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 // =========================================================
 void setup() {
   Serial.begin(115200);
-  Serial2.begin(115200, SERIAL_8N1, 16, 17); // Đảm bảo RX/TX chéo với Mạch 1
+  Serial2.begin(115200, SERIAL_8N1, 16, 17); // RX/TX chéo với Mạch 1
   
   lcd.init();
   lcd.backlight();
-  printLCD("Khoi dong", "VETC Slave...");
+  printLCD("Khoi dong", "VETC LAN Slave");
 
-  mqttClient.setServer(HIVEMQ_SERVER, HIVEMQ_PORT);
-  mqttClient.setCallback(mqttCallback);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  server.on("/open_gate", HTTP_GET, handleOpenGate);
+  server.on("/deny_gate", HTTP_GET, handleDenyGate);
+  server.begin();
 }
 
 // =========================================================
 // LOOP
 // =========================================================
 void loop() {
-  maintainMQTT();
+  checkWiFi();
+  server.handleClient(); // Xử lý API LAN
 
-  // 1. NHẬN SỰ KIỆN TỪ MẠCH 1 (CẢM BIẾN/SERVO HUB)
+  // NHẬN SỰ KIỆN TỪ MẠCH 1 (CẢM BIẾN/SERVO HUB)
   if (Serial2.available()) {
     String msg = Serial2.readStringUntil('\n');
     msg.trim();
     
     if (msg == "CAR_IN") {
-      printLCD("Phat hien xe!", "Cho 5s chup...");
-      carInDetectedTime = millis();
-      isWaitingToCapture = true;
+      printLCD("Xe vao", "Cho nhan dien");
+      
+      // Gọi HTTP GET thẳng sang Python Server
+      if (WiFi.status() == WL_CONNECTED) {
+        HTTPClient http;
+        String url = "http://" + String(PYTHON_SERVER_IP) + ":" + String(PYTHON_SERVER_PORT) + "/trigger_capture";
+        http.begin(url);
+        int httpCode = http.GET();
+        if (httpCode > 0) {
+          Serial.printf(">> Đã gửi lệnh chụp ảnh tới Python (Code: %d)\n", httpCode);
+        } else {
+          Serial.printf(">> LỖI KẾT NỐI PYTHON SERVER: %s\n", http.errorToString(httpCode).c_str());
+          printLCD("Loi Mang LAN", "Khong thay Server");
+        }
+        http.end();
+      }
     } 
     else if (msg == "CAR_OUT") {
-      printLCD("Xe da di qua!", "Cho 3s dong...");
-      carOutDetectedTime = millis();
-      isWaitingToClose = true;
-    }
-    else if (msg.startsWith("DIST:")) {
-      // Nhận dữ liệu cảm biến: DIST:15.2,20.5
-      String data = msg.substring(5);
-      int commaIndex = data.indexOf(',');
-      if (commaIndex > 0) {
-        String d1 = data.substring(0, commaIndex);
-        String d2 = data.substring(commaIndex + 1);
-        
-        Serial.println(">> [LIVE] CB1: " + d1 + "cm | CB2: " + d2 + "cm");
-        
-        // Nếu không có sự kiện gì đang chờ, hiển thị lên LCD cho trực quan
-        if (!isWaitingToCapture && !isWaitingToClose) {
-          lcd.setCursor(0, 1);
-          lcd.print("T1:" + String(d1.toInt()) + "cm T2:" + String(d2.toInt()) + "cm  ");
-        }
-      }
+      // Vì mạch 1 đã có 3s chống kẹt, ta chỉ cần xuất lệnh đóng
+      Serial2.println("CLOSE"); 
     }
     else if (msg.startsWith("STATE:")) {
       String state = msg.substring(6);
       if (state == "OPEN") {
-        printLCD("Trang thai Cong:", ">> DANG MO <<");
+        // Chỉ ghi cổng đóng/mở theo yêu cầu
+        printLCD("CONG MO", ""); 
       } else if (state == "CLOSED") {
-        printLCD("Trang thai Cong:", ">> DA DONG <<");
+        printLCD("CONG DONG", "He thong SS");
       }
     }
-  }
-
-  // 2. XỬ LÝ THỜI GIAN CHỜ CHỤP ẢNH (5 GIÂY)
-  if (isWaitingToCapture && (millis() - carInDetectedTime >= 5000)) {
-    isWaitingToCapture = false;
-    printLCD("Dang chup anh...", "Gui len Python");
-    
-    // Đánh thức Python chụp ảnh
-    if (mqttClient.connected()) {
-      mqttClient.publish("iot_thanglong/trigger", "{\"action\":\"capture\"}");
+    // (Bỏ phần hiển thị khoảng cách DIST ra LCD để tránh rối mắt, chỉ giữ lại trên Serial nếu cần)
+    else if (msg.startsWith("DIST:")) {
+      String data = msg.substring(5);
+      int commaIndex = data.indexOf(',');
+      if (commaIndex > 0) {
+        Serial.println(">> [LIVE] CB1: " + data.substring(0, commaIndex) + "cm | CB2: " + data.substring(commaIndex + 1) + "cm");
+      }
     }
-  }
-
-  // 3. XỬ LÝ THỜI GIAN CHỜ ĐÓNG CỔNG (3 GIÂY)
-  if (isWaitingToClose && (millis() - carOutDetectedTime >= 3000)) {
-    isWaitingToClose = false;
-    printLCD("Đong cong...", "He thong SS");
-    
-    // Ra lệnh cho Mạch 1 đóng cổng
-    Serial2.println("CLOSE");
   }
 }

@@ -27,8 +27,10 @@ const float THRESHOLD = 20.0; // Xe được nhận diện khi khoảng cách th
 const float SPEED_CONST = 0.017;
 
 bool isGateOpen = false;
+bool isManualMode = false; // Cờ theo dõi chế độ đóng mở thủ công
 bool carInside = false; // Trạng thái xe đang trong vùng quét (Đã qua CB1)
 bool carAtGate = false; // Trạng thái xe đang nằm ngay dưới cổng (Đang chắn CB2)
+unsigned long lastClearTime = 0; // Thời điểm cuối cùng cảm biến 2 bị che
 
 // Chống dội nút bấm
 volatile bool buttonPressed = false;
@@ -146,8 +148,13 @@ void loop() {
   // 1. Kiểm tra Nút bấm thủ công (Xử lý ngay lập tức nhờ Ngắt phần cứng)
   if (buttonPressed) {
     buttonPressed = false;
-    if (isGateOpen) closeGate();
-    else openGate();
+    if (isGateOpen) {
+      closeGate();
+      isManualMode = false; // Tắt chế độ thủ công khi đã đóng cổng
+    } else {
+      openGate();
+      isManualMode = true; // Bật chế độ thủ công: KHÔNG đóng cổng tự động
+    }
   }
 
   // 2. Nhận lệnh từ IOT_2 (Qua UART)
@@ -192,15 +199,22 @@ void loop() {
       carAtGate = true;
       Serial.println(">> [SENS] XE DANG NAM DUOI CONG...");
     }
+    // LƯU Ý: Nếu xe vẫn đang chắn, liên tục reset đồng hồ đếm 3 giây!
+    lastClearTime = millis();
   } 
   else if (!trigger2 && carAtGate) {
-    // Xe vừa đi qua hoàn toàn (Khoảng cách d2 đã trở về nền bình thường)
-    if (millis() - lastCarOutTime > 3000) { // Chống dội nhiễu
+    // Khoảng cách d2 đã trở về nền bình thường (Xe không còn che cảm biến)
+    // Phải chờ ĐỦ 3 giây liên tục không bị che thì mới đóng cổng!
+    if (millis() - lastClearTime > 3000) { 
       carAtGate = false;
       carInside = false; // Reset chu trình
-      lastCarOutTime = millis();
-      Serial.println(">> [SENS] XE DA QUA HOAN TOAN! (Tro ve NEN)");
-      Serial2.println("CAR_OUT"); // Báo cho IOT_2 (Mạch 2 sẽ tự động đợi thêm 3s rồi đóng cổng)
+      
+      if (!isManualMode) {
+        Serial.println(">> [SENS] XE DA QUA HOAN TOAN 3 GIAY! ĐONG CONG.");
+        Serial2.println("CAR_OUT"); // Báo cho IOT_2 biết đã an toàn tuyệt đối
+      } else {
+        Serial.println(">> [SENS] XE DA QUA, NHUNG DANG MO THU CONG -> KHONG DONG TU DONG!");
+      }
     }
   }
   

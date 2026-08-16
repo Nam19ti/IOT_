@@ -118,7 +118,7 @@ def get_html(controller):
             </div>
             <div class="form-row">
                 <label>TB Token:</label>
-                <input type="text" id="tb_token" value="{tb_tok}">
+                <input type="text" id="cameraUrl" value="{cam_url}" placeholder="rtsp://admin:pass@192.168.1.100:554/stream">
             </div>
             <div class="btn-row">
                 <button class="btn btn-green" onclick="saveSettings()">Luu Cau Hinh</button>
@@ -130,18 +130,13 @@ def get_html(controller):
 
 <script>
     function saveSettings() {{
+        const newUrl = document.getElementById('cameraUrl').value;
         fetch('/set_settings', {{
             method: 'POST',
             headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify({{
-                url: document.getElementById('cam_ip').value,
-                api_key: document.getElementById('gemini_key').value,
-                tb_token: document.getElementById('tb_token').value
-            }})
-        }}).then(r => r.json()).then(d => {{
-            const el = document.getElementById('save_msg');
-            el.innerText = 'Da luu thanh cong!';
-            setTimeout(() => el.innerText = '', 3000);
+            body: JSON.stringify({{ url: newUrl }})
+        }}).then(r => r.json()).then(data => {{
+            if(data.success) alert("Đã lưu Cấu hình Camera!");
         }});
     }}
 
