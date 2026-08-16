@@ -109,8 +109,16 @@ def create_app(controller):
         frames = [(img, None)]
         
         try:
-            # GỌI AI ENGINE xử lý luồng nhận diện, trả về biển số, tên engine và...
-            plate, engine, _ = controller.ai_engine.process_pipeline(frames)
+            # GỌI AI ENGINE xử lý luồng nhận diện, trả về biển số, tên engine và ảnh đã crop
+            plate, engine, cropped_frame = controller.ai_engine.process_pipeline(frames)
+            
+            # Lưu ảnh crop (hoặc ảnh gốc nếu không crop được) để hiển thị trên web
+            crop_filename = "latest_crop.jpg"
+            crop_path = os.path.join(os.path.dirname(__file__), "captures", crop_filename)
+            if cropped_frame is not None:
+                cv2.imwrite(crop_path, cropped_frame)
+            else:
+                shutil.copy2(img_path, crop_path)
             
             # Tính thời gian đã chạy
             elapsed = round(time.time() - start, 2)
@@ -122,7 +130,7 @@ def create_app(controller):
                 "status": "Test Thu Cong",
                 "proc_time": elapsed,
                 "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "image": "latest_capture.jpg"
+                "image": crop_filename
             }
             
             # SAO LƯU (BACKUP) - Lưu trữ ảnh lịch sử
@@ -241,7 +249,16 @@ def create_app(controller):
                 p(f"    -> Da chup anh. Dang chay AI Nhan Dien (Lan {attempt+1})...")
                 
                 # Đưa khung hình vào bộ não AI
-                plate, engine, _ = controller.ai_engine.process_pipeline(frames)
+                plate, engine, cropped_frame = controller.ai_engine.process_pipeline(frames)
+                
+                # Lưu ảnh crop cho Web UI
+                crop_filename = "latest_crop.jpg"
+                crop_path = os.path.join(os.path.dirname(__file__), "captures", crop_filename)
+                if cropped_frame is not None:
+                    cv2.imwrite(crop_path, cropped_frame)
+                else:
+                    if os.path.exists("captures/latest_capture.jpg"):
+                        shutil.copy2("captures/latest_capture.jpg", crop_path)
                 
                 # Nếu nhận diện thành công (Biển số hợp lệ, không chứa các từ khóa lỗi)
                 if plate not in ("Khong Nhan Dien Duoc", "Khong Thay Bien"):
@@ -258,7 +275,7 @@ def create_app(controller):
                 "status": "Xe Vao Tram" if plate not in ("Khong Nhan Dien Duoc", "Khong Thay Bien") else "Loi Nhan Dien",
                 "proc_time": elapsed,
                 "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "image": "latest_capture.jpg"
+                "image": "latest_crop.jpg"
             }
 
             # LƯU TRỮ LỊCH SỬ NHẬN DIỆN

@@ -26,15 +26,18 @@ except ImportError:
 # CẤU HÌNH BIỂN SỐ VÀ TỪ ĐIỂN SỬA LỖI
 # ==========================================
 
-# Regex chuẩn hóa định dạng biển số Việt Nam (Vd: 29A12345)
-# Gồm: 2-3 số đầu (mã tỉnh) + 1-2 chữ cái (mã quận/huyện) + 4-5 số cuối
-VN_PLATE_RE = re.compile(r'^(\d{2,3})([A-Z]{1,2})(\d{4,5})$')
+# Regex định dạng biển số xe Việt Nam (Hỗ trợ cả ô tô và xe máy)
+# Ô tô: 2 số + 1-2 chữ + 4-5 số (VD: 30A12345, 51KT1234)
+# Xe máy: 2 số + 1 chữ + 1 số/chữ + 4-5 số (VD: 99E122268)
+VN_PLATE_RE = re.compile(r'^(\d{2})([A-Z][A-Z0-9]?)(\d{4,5})$')
 
 # Từ điển tự động sửa các lỗi nhận diện AI thường gặp (Nhầm số thành chữ và ngược lại)
 OCR_FIX = {
-    'O': '0', 'I': '1', 'L': '1', 'B': '8', 
-    'S': '5', 'Z': '2', 'G': '6', 'Q': '0',
-    'D': '0'
+    'O': '0', 'Q': '0',
+    'I': '1', 'J': '1',
+    'L': '1', 'B': '8', 
+    'S': '5', 'Z': '2', 'G': '6',
+    'A': '4', 'T': '7', 'D': '0'
 }
 
 class HybridOCR:
@@ -104,10 +107,21 @@ class HybridOCR:
         Quy trình hậu xử lý thông minh (Sliding Window): 
         Lọc biển số khỏi các chữ rác trong nền ảnh (VD: AI đọc là 'HONDA29A12345').
         """
+        # Tiền xử lý: Xóa các ký tự không hợp lệ
         raw = re.sub(r'[^A-Z0-9]', '', raw.upper())
         
+        # Sửa lỗi đặc thù: Nhiễu viền trái khiến AI đọc dư 1 chữ cái (Ví dụ: 99JE122268, 99HE122268)
+        # Nếu xóa chữ cái dư đó mà tạo thành biển hợp lệ thì ưu tiên lấy luôn.
+        if len(raw) > 9:
+            match = re.match(r'^(\d{2})[A-Z]([A-Z][A-Z0-9]?\d{4,5})$', raw)
+            if match:
+                candidate = match.group(1) + match.group(2)
+                if self._validate(candidate):
+                    return candidate
+
         # 1. Thử tìm ngay một chuỗi khớp hoàn hảo nằm bên trong (Regex Search)
-        match = re.search(r'(\d{2,3}[A-Z]{1,2}\d{4,5})', raw)
+        # Bắt buộc chuỗi cắt ra không được dính liền với số khác (tránh chặt đôi một số dài)
+        match = re.search(r'(?<!\d)(\d{2}[A-Z][A-Z0-9]?\d{4,5})(?!\d)', raw)
         if match:
             return match.group(1)
             
@@ -134,61 +148,63 @@ class HybridOCR:
 
     def _crop_plate(self, img):
         """
-        Dùng Haar Cascade để khoanh vùng và cắt riêng phần biển số ra khỏi ảnh nền.
-        Giúp AI không bị phân tâm bởi các chữ rác xung quanh (như logo hãng xe).
+        Khoanh vùng và cắt riêng phần biển số bằng CRAFT Text Detector (EasyOCR).
+        Chính xác hơn Haar Cascade và tương thích với OpenCV 5.
         """
+        if not self.reader:
+            return img
         try:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            import os
-            cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_russian_plate_number.xml')
-            if not os.path.exists(cascade_path):
+            # Thu nhỏ tạm thời để detect nhanh vùng chữ
+            h, w = img.shape[:2]
+            scale = min(800 / float(w), 1.0)
+            if scale < 1.0:
+                resized = cv2.resize(img, (int(w*scale), int(h*scale)), interpolation=cv2.INTER_AREA)
+            else:
+                resized = img
+
+            horizontal_list, free_list = self.reader.detect(resized)
+            if not horizontal_list or len(horizontal_list[0]) == 0:
                 return img
                 
-            plate_cascade = cv2.CascadeClassifier(cascade_path)
-            # Quét tìm biển số trong ảnh
-            plates = plate_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+            bboxes = horizontal_list[0]
+            # Lọc các box quá nhỏ (nhiễu)
+            max_w = max(b[1] - b[0] for b in bboxes)
+            main_boxes = [b for b in bboxes if (b[1] - b[0]) > max_w * 0.3]
+            if not main_boxes: main_boxes = bboxes
             
-            if len(plates) > 0:
-                # Lấy biển có diện tích lớn nhất (gần camera nhất)
-                plates = sorted(plates, key=lambda x: x[2]*x[3], reverse=True)
-                x, y, w, h = plates[0]
-                
-                # Nới rộng vùng cắt (Padding) ra 15% để không bị lẹm chữ
-                pad_x = int(w * 0.15)
-                pad_y = int(h * 0.15)
-                
-                img_h, img_w = img.shape[:2]
-                x1 = max(0, x - pad_x)
-                y1 = max(0, y - pad_y)
-                x2 = min(img_w, x + w + pad_x)
-                y2 = min(img_h, y + h + pad_y)
-                
-                cropped = img[y1:y2, x1:x2]
-                p("      -> [AI] Đã khoanh vùng và cắt riêng biển số thành công!")
-                return cropped
+            x_min = min(b[0] for b in main_boxes)
+            x_max = max(b[1] for b in main_boxes)
+            y_min = min(b[2] for b in main_boxes)
+            y_max = max(b[3] for b in main_boxes)
+            
+            x_min = int(x_min / scale)
+            x_max = int(x_max / scale)
+            y_min = int(y_min / scale)
+            y_max = int(y_max / scale)
+            
+            pad_x = int((x_max - x_min) * 0.30)
+            pad_y = int((y_max - y_min) * 0.30)
+            
+            x1 = max(0, x_min - pad_x)
+            y1 = max(0, y_min - pad_y)
+            x2 = min(w, x_max + pad_x)
+            y2 = min(h, y_max + pad_y)
+            
+            cropped = img[y1:y2, x1:x2]
+            p("      -> [AI] Đã khoanh vùng cắt biển bằng CRAFT Text Detector thành công!")
+            return cropped
         except Exception as e:
             p(f"      -> [CROP LỖI] {e}")
             
-        return img # Trả về ảnh gốc nếu không phát hiện được biển số
+        return img # Trả về ảnh gốc nếu lỗi
 
     def _run_easyocr(self, img):
         """Nhận diện biển số Offline bằng mô hình AI EasyOCR"""
         if not self.reader: 
             return "Thieu Thiet Lap"
         try:
-            # TỐI ƯU HÓA TỐC ĐỘ: Thu nhỏ kích thước ảnh xuống chiều ngang tối đa 800px
-            # Điều này giúp EasyOCR chạy nhanh gấp 3-5 lần mà không suy giảm đáng kể độ chính xác
-            h, w = img.shape[:2]
-            max_width = 800
-            if w > max_width:
-                ratio = max_width / float(w)
-                new_h = int(h * ratio)
-                img_resized = cv2.resize(img, (max_width, new_h), interpolation=cv2.INTER_AREA)
-            else:
-                img_resized = img
-
-            # Chạy mô hình trích xuất chữ (Allowlist: Giới hạn chỉ nhận diện chữ và số)
-            results = self.reader.readtext(img_resized, allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', detail=0)
+            # Chạy mô hình trích xuất chữ trực tiếp trên ảnh gốc (không nén để giữ nguyên độ nét)
+            results = self.reader.readtext(img, allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', detail=0)
             if not results:
                 return None
             
@@ -257,7 +273,10 @@ class HybridOCR:
         # Ưu tiên lấy ảnh sắc nét nhất lên đầu tiên
         scored_frames.sort(key=lambda x: x[0], reverse=True)
         
-        p(f"    -> [AI] Bắt đầu chạy Nhận diện trên ảnh nét nhất... (Chế độ: {self.mode})")
+        # TỐI ƯU TỐC ĐỘ: Chỉ xử lý tối đa 2 ảnh nét nhất thay vì toàn bộ (Tiết kiệm 60% thời gian)
+        scored_frames = scored_frames[:2]
+        
+        p(f"    -> [AI] Bắt đầu chạy Nhận diện trên {len(scored_frames)} ảnh nét nhất... (Chế độ: {self.mode})")
         
         for score, frame, orig_idx in scored_frames:
             p(f"      -> Đang phân tích ảnh gốc số {orig_idx} (Độ nét: {score:.1f})...")
