@@ -14,10 +14,11 @@ Các hệ thống trạm thu phí truyền thống hoặc bãi giữ xe bán t�
 - **Tính liền mạch dữ liệu:** Không có cơ chế lưu trữ đệm khi hệ thống mất kết nối mạng Internet.
 
 ### 1.2. Mục tiêu giải quyết
-- 🛡️ **Kiến trúc Zero-Crash:** Áp dụng thuật toán bảo vệ kép (Double Check) qua cảm biến siêu âm, ngăn chặn tuyệt đối việc barie hạ sớm.
+- 🛡️ **Kiến trúc Zero-Crash:** Áp dụng thuật toán bảo vệ kép (Double Check) qua cảm biến siêu âm, ngăn chặn tuyệt đối việc barie hạ sớm khi phương tiện đang dừng/di chuyển qua cổng.
 - ⚡ **Giao tiếp LAN HTTP (Micro-latency):** Các vi điều khiển giao tiếp trực tiếp với Server thông qua HTTP RESTful API, giảm độ trễ xuống dưới 50ms.
-- 🧠 **Hybrid AI (Google GenAI & EasyOCR):** Chạy song song Cloud AI (Gemini 3.5 Flash / 2.5 Flash) và Edge AI (EasyOCR). Tích hợp `SyncManager` tự động lưu bản ghi vào `history` MongoDB và lưu file đệm CSV (`pending_sync.csv`) khi mất mạng.
-- 🔒 **Bảo mật & Trải nghiệm Web UI:** Trang đăng nhập Session Admin, tùy chỉnh vùng nhận diện ROI (Kéo di chuyển & Thu phóng trực tiếp), Dashboard phân tab dữ liệu chuẩn xác, xử lý xe lạ xóa hàng loạt không cần tải lại trang.
+- 🧠 **Hybrid AI (Google GenAI & EasyOCR):** Chạy song song Cloud AI (Gemini 3.5 Flash / 2.5 Flash qua SDK `google-genai` mới nhất) và Edge AI (EasyOCR). Tích hợp `SyncManager` tự động lưu bản ghi vào `history` MongoDB và lưu file đệm CSV (`pending_sync.csv`) khi rớt mạng.
+- 🔒 **Bảo mật & Trải nghiệm Web UI:** Trang đăng nhập Session Admin, tùy chỉnh vùng nhận diện ROI (Kéo di chuyển & Thu phóng trực tiếp với núm đỏ), Dashboard phân 4 Tab dữ liệu chuẩn xác, xử lý xe lạ xóa hàng loạt tức thì trên DOM.
+- 🌐 **Cloudflare Tunnel & Remote Control:** Tự động mở luồng truy cập Public qua Cloudflare và gửi link truy cập từ xa trực tiếp về Telegram Admin.
 
 ---
 
@@ -34,16 +35,17 @@ IOT_ThangLong/
 │   └── IOT_2.ino        => Firmware chạy Web Server cục bộ & Giao tiếp Màn hình LCD I2C.
 │
 ├── Python_ALPR          [Thư mục: Lõi xử lý Máy chủ (Backend + Web UI)]
-│   ├── server.py        => Flask Web Server & API cốt lõi (Xử lý HTTP Trigger từ ESP32).
-│   ├── ai.py            => AI Engine (Chạy Hybrid AI: Gemini API và EasyOCR).
+│   ├── server.py        => Flask Web Server & API cốt lõi (Xử lý Trigger từ ESP32, Login, Tunnel).
+│   ├── ai.py            => AI Engine (Hybrid AI: Google GenAI SDK & EasyOCR Offline).
 │   ├── camera.py        => Bắt luồng ảnh tĩnh (Snapshot) từ IP Webcam (Smartphone).
-│   ├── sync_manager.py  => Luồng nền (Background Thread) đồng bộ ảnh và dữ liệu lên Cloud.
-│   ├── web_html.py      => Giao diện Bảng điều khiển người dùng (Web UI HTML/JS).
+│   ├── sync_manager.py  => Luồng nền (Background Worker) đồng bộ dữ liệu MongoDB, Firebase, Telegram.
+│   ├── web_html.py      => Giao diện Bảng điều khiển người dùng (Web UI HTML/JS + Session Login).
 │   ├── core.py          => Quản lý trạng thái hệ thống và lưu cấu hình (Config).
-│   ├── config.json      => File cấu hình tự sinh chứa các API Key và tùy chọn.
-│   └── history/         => (Tự sinh) Thư mục lưu trữ ảnh và file CSV hàng đợi khi mất mạng.
+│   ├── cloud.py         => Module kết nối Firebase Realtime Database.
+│   ├── config.json      => File cấu hình tự sinh chứa các API Key, Token và Tùy chỉnh.
+│   └── history/         => Thư mục đệm chứa nhật ký, ảnh vi phạm và file đệm CSV pending_sync.
 │
-└── README.md            => Tài liệu hướng dẫn sử dụng và mô tả hệ thống.
+└── README.md            => Tài liệu hướng dẫn sử dụng và mô tả hệ thống chi tiết.
 ```
 
 ---
@@ -161,19 +163,37 @@ python server.py
 
 ### Cấu hình và Tính năng trên Bảng Điều Khiển Web (Dashboard)
 Giao diện điều khiển cung cấp một bảng quản trị toàn diện, bảo mật bằng mật khẩu:
-1. **Đăng nhập Bảo mật (Login):** Yêu cầu xác thực tài khoản Admin trước khi truy cập hệ thống.
+1. **Đăng nhập Bảo mật (Login):** Yêu cầu xác thực tài khoản Admin trước khi truy cập hệ thống (Mật khẩu mặc định trong `admin_password` của `config.json`).
 2. **Tùy chỉnh vùng nhận diện ROI (Drag & Resize):**
    - Nắm kéo vùng màu xanh để di chuyển (Drag).
    - Nắm kéo **núm đỏ** ở góc dưới bên phải để thu nhỏ / phóng to vùng cắt ảnh (Resize).
-3. **Cấu hình Hệ thống (`[Cài Đặt]`):** Nhấp nút `[Cài Đặt]` để bật bảng điều chỉnh URL IP Webcam, Gemini API Key, MongoDB URI, Firebase URL, Telegram Bot Token.
-4. **Hệ thống Tab Quản lý:**
+3. **Cấu hình Hệ thống (`[Cài Đặt]`):** Nhấp nút `[Cài Đặt]` để mở bảng điều chỉnh URL IP Webcam, Gemini API Key, MongoDB URI, Firebase URL, Telegram Bot Token.
+4. **Hệ thống 4 Tab Quản lý:**
    - **Trạm Thu Phí:** Theo dõi camera trực tiếp, kết quả OCR và bảng điều khiển cổng LAN.
-   - **Xe Khách Lạ:** Hiển thị xe chưa có trong CSDL. Hỗ trợ ô tích chọn (Checkbox) để **Xóa Đã Chọn** hàng loạt hoặc Duyệt/Cảnh báo tức thì (Cập nhật DOM 100% không reload trang).
-   - **Lịch Sử Nhận Diện:** Đọc 50 lượt xe đi qua gần nhất từ Cloud MongoDB, hiển thị nhãn phân loại màu sắc (🟢 Xe Quen / 🟡 Xe Lạ / 🔴 CẢNH BÁO).
-   - **Hàng Đợi CSV:** Quản lý danh sách đệm khi rớt mạng. Các lượt xe đã được đẩy lên Cloud sẽ tự động biến mất khỏi danh sách này.
+   - **Xe Khách Lạ:** Hiển thị danh sách xe lạ. Tích chọn ô vuông (Checkbox) để **Xóa Đã Chọn** hàng loạt hoặc Duyệt/Cảnh báo (Cập nhật DOM mượt 100% không reload trang).
+   - **Lịch Sử Nhận Diện:** Truy vấn 50 lượt xe đi qua mới nhất từ Cloud MongoDB, có nhãn màu phân loại (🟢 Xe Quen / 🟡 Xe Lạ / 🔴 CẢNH BÁO).
+   - **Hàng Đợi CSV:** Quản lý các bản ghi đệm khi rớt mạng (`pending_sync.csv`). Các lượt xe đẩy lên Cloud thành công sẽ tự động biến mất khỏi danh sách này.
 
-### Vận hành
-- **Tự động:** Đưa phương tiện đi ngang qua cảm biến 1. Hệ thống sẽ tự động chụp ảnh, phân tích, đẩy dữ liệu lên đám mây, mở cổng và tự đóng cổng.
-- **Thủ công:** Trên giao diện Web có nút **"Chụp & Nhận Diện"** để test riêng hệ thống AI, nút **"Mở (Tự Động Đóng Sau 3s)"** (chạy Background Thread tự động đóng sau 3s) hoặc các nút điều khiển cổng khẩn cấp.
+### Vận hành & Đóng Mở Cổng
+- **Tự động:** Đưa phương tiện đi ngang qua cảm biến 1. Hệ thống tự động chụp ảnh, phân tích biển số, đẩy dữ liệu lên đám mây, mở cổng và đếm ngược 3s tự đóng.
+- **Thủ công từ Web UI:**
+  - **Mở (Tự Động Đóng Sau 3s):** Server chạy luồng nền Background Thread đếm lùi 3 giây rồi phát lệnh đóng cổng an toàn.
+  - **Mở Mãi Mãi (Không Tự Đóng):** Giữ cổng mở liên tục cho đến khi có lệnh đóng mới.
+  - **Đóng Cổng Khẩn Cấp:** Hạ thanh chắn ngay lập tức.
 
-> **Lưu ý Căn chỉnh:** Lần đầu cắm điện, mạch Master sẽ nháy đèn và chạy đo đạc không gian xung quanh làm mẫu nền khoảng 2 giây. Xin vui lòng không đứng che cảm biến trong lúc này. Màn hình LCD sẽ báo `He thong SS` khi quá trình hoàn tất.
+---
+
+## 7. XỬ LÝ SỰ CỐ THƯỜNG GẶP (TROUBLESHOOTING)
+
+### 7.1. Chạy trên Raspberry Pi 5 hoặc Mạng Hotspot ĐTDĐ
+- 📷 **Không chụp được ảnh:** 
+  1. Đảm bảo app IP Webcam trên điện thoại đã bấm **Start server**.
+  2. Địa chỉ IP khi dùng Hotspot thường thay đổi (ví dụ: `http://192.168.43.1:8080/shot.jpg`). Hãy cập nhật đúng IP mới trong mục `[Cài Đặt]` trên Web UI.
+- 📲 **Không gửi được thông báo Telegram:**
+  1. Đảm bảo ĐTDĐ phát Hotspot có bật **4G/5G (Dữ liệu di động)** để Raspberry Pi 5 truy cập được Internet (`api.telegram.org`).
+  2. Đã nhập đúng **Telegram Bot Token** và **Admin Telegram ID** trong mục `[Cài Đặt]`.
+- 🌐 **Không thấy gửi link kết nối Cloudflare về Telegram khi bật Server:**
+  - Kiểm tra xem ô `telegram_token` trong `config.json` đã có dữ liệu chưa. Nhập Token trên Web UI và bấm **Lưu Cài Đặt** để lưu cố định.
+  - Chạy lệnh `pip install pycloudflared` trên Pi 5 nếu chưa cài đặt thư viện Cloudflare.
+
+> **Lưu ý Căn chỉnh Cảm biến:** Lần đầu cắm điện, mạch Master sẽ nháy đèn và chạy đo đạc không gian xung quanh làm mẫu nền khoảng 2 giây. Xin vui lòng không đứng che cảm biến trong lúc này. Màn hình LCD sẽ báo `He thong SS` khi quá trình hoàn tất.
