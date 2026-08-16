@@ -185,258 +185,160 @@ class HybridOCR:
         except:
             return 0.0
 
-    def _order_points(self, pts):
-        """
-        Sắp xếp 4 điểm theo thứ tự chuẩn: Trái-Trên, Phải-Trên, Phải-Dưới, Trái-Dưới.
-        Dùng cho Perspective Transform - đảm bảo 4 góc nguồn khớp đúng 4 góc đích.
-        Thuật toán: Dùng tổng (x+y) để tìm TL (nhỏ nhất) và BR (lớn nhất),
-                    dùng hiệu (x-y) để tìm TR (nhỏ nhất) và BL (lớn nhất).
-        """
-        rect = np.zeros((4, 2), dtype="float32")
-        s = pts.sum(axis=1)
-        rect[0] = pts[np.argmin(s)]   # Trái-Trên: x+y nhỏ nhất
-        rect[2] = pts[np.argmax(s)]   # Phải-Dưới: x+y lớn nhất
-        d = np.diff(pts, axis=1)
-        rect[1] = pts[np.argmin(d)]   # Phải-Trên: y nhỏ, x lớn → x-y nhỏ nhất
-        rect[3] = pts[np.argmax(d)]   # Trái-Dưới: y lớn, x nhỏ → x-y lớn nhất
-        return rect
-
     def _crop_plate(self, img):
         """
-        Thuat toan Crop v3: Edge Detection — Khong phu thuoc mau sac.
-        Hoat dong voi moi mau xe (trang, den, do...) va moi loai bien (trang, vang, xanh).
-        
-        Buoc 1: Thu nho anh 18% de xu ly nhanh
-        Buoc 2: Bilateral Filter giu canh sac + Canny Edge Detection
-        Buoc 3: Morphology Close + Dilate noi cac canh ky tu thanh 1 khoi
-        Buoc 4: Loc contour theo 4 tieu chi:
-                 - Dien tich (0.5% ~ 15% tong anh)
-                 - Ty le canh (0.8 ~ 6.0)
-                 - Do chu nhat / Solidity (> 0.35)
-                 - Phuong sai Grayscale (> 800 = co chu ben trong)
-                 + Bonus cho hinh tu giac (approxPolyDP = 4 dinh)
-        Buoc 5: minAreaRect + boxPoints → Scale len anh goc
-        Buoc 6: Perspective Transform nan thang bien nghieng
-        Buoc 7: Resize ve ~450px cho OCR
+        Thuật toán Crop sử dụng khung ROI tĩnh do người dùng tùy chỉnh trên giao diện Web.
+        """
+        import json
+        import os
+        try:
+            # Đọc toạ độ ROI từ file config
+            config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+            if not os.path.exists(config_path):
+                return img
+                
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                
+            roi = config.get("roi")
+            if roi:
+                h_orig, w_orig = img.shape[:2]
+                
+                # Tính toạ độ pixel thực tế từ phần trăm
+                x1 = int(roi['x'] * w_orig)
+                y1 = int(roi['y'] * h_orig)
+                w = int(roi['w'] * w_orig)
+                h = int(roi['h'] * h_orig)
+                x2 = x1 + w
+                y2 = y1 + h
+                
+                # Cắt không vượt viền
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(w_orig, x2), min(h_orig, y2)
+                
+                if x2 > x1 and y2 > y1:
+                    cropped = img[y1:y2, x1:x2]
+                    p(f"      -> [CROP] Da cat anh theo khung ROI (x:{x1}, y:{y1}, w:{x2-x1}, h:{y2-y1})")
+                    
+                    # Resize chuẩn độ phân giải cho OCR
+                    TARGET_WIDTH = 450
+                    crop_h, crop_w = cropped.shape[:2]
+                    if crop_w > TARGET_WIDTH:
+                        ratio = TARGET_WIDTH / crop_w
+                        cropped = cv2.resize(cropped, (TARGET_WIDTH, int(crop_h * ratio)), interpolation=cv2.INTER_AREA)
+                    elif crop_w < 200:
+                        ratio = 300 / crop_w
+                        cropped = cv2.resize(cropped, (300, int(crop_h * ratio)), interpolation=cv2.INTER_CUBIC)
+                        
+                    return cropped
+                else:
+                    p("      -> [CROP] Toa do ROI khong hop le, tra ve anh goc.")
+        except Exception as e:
+            p(f"      -> [CROP LOI] {e}. Tra ve anh goc.")
+            
+        return img
+
+    def _preprocess_for_ocr(self, img):
+        """
+        Sử dụng sức mạnh của OpenCV để tối ưu hóa ảnh cho EasyOCR.
+        Bao gồm: Nắn thẳng (Deskew), Tăng độ tương phản (CLAHE), Xóa nhiễu, Làm nét.
         """
         try:
-            h_orig, w_orig = img.shape[:2]
-            SCALE_FACTOR = 0.18  # Thu nho xuong 18% kich thuoc goc
-
-            # ============================================
-            # BUOC 1: Thu nho anh de xu ly nhanh
-            # ============================================
-            small_w = int(w_orig * SCALE_FACTOR)
-            small_h = int(h_orig * SCALE_FACTOR)
-            if small_w < 10 or small_h < 10:
-                p("      -> [CROP] Anh qua nho, bo qua crop.")
-                return img
-            small = cv2.resize(img, (small_w, small_h), interpolation=cv2.INTER_AREA)
-            p(f"      -> [CROP] Thu nho 18%: {w_orig}x{h_orig} -> {small_w}x{small_h}")
-
-            # ============================================
-            # BUOC 2: Edge Detection (KHONG phu thuoc mau sac)
-            # ============================================
-            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-            # Bilateral Filter: Lam min nhieu nhung GIU NGUYEN canh sac net
-            # Rat tot cho bien so vi ky tu co canh sac, nen thi min
-            blurred = cv2.bilateralFilter(gray, 11, 17, 17)
-            # Canny Edge: Phat hien moi canh trong anh, bat ke mau sac
-            edges = cv2.Canny(blurred, 30, 200)
-
-            # ============================================
-            # BUOC 3: Morphology — Noi cac canh ky tu thanh 1 khoi
-            # ============================================
-            # Kernel ngang dai hon doc vi bien so ngang > doc
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 3))
-            # Close: Lap day khoang trong giua cac ky tu
-            closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
-            # Dilate: Mo rong them de dam bao cac ky tu dinh lien nhau
-            closed = cv2.dilate(closed, kernel, iterations=1)
-
-            # ============================================
-            # BUOC 4: Tim contours va loc thong minh
-            # ============================================
-            contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if not contours:
-                p("      -> [CROP] Khong tim thay contour nao. Tra anh goc.")
-                return img
-
-            total_area = small_w * small_h
-            candidates = []
-
-            for c in contours:
-                area = cv2.contourArea(c)
-
-                # --- LOC 1: Dien tich (0.5% ~ 15% tong anh) ---
-                # Bien so thuong chiem 0.5-15% dien tich anh chup
-                # Nhieu nho (oc vit, den) < 0.5% → loai
-                # Vung qua lon (than xe, bau troi) > 15% → loai
-                area_ratio = area / total_area
-                if area_ratio < 0.005 or area_ratio > 0.15:
-                    continue
-
-                # --- LOC 2: Ty le canh (Aspect Ratio) ---
-                rect = cv2.minAreaRect(c)
-                (cx, cy), (rw, rh), angle = rect
-                if rw == 0 or rh == 0:
-                    continue
-                # Dam bao rw luon la canh dai hon
-                if rw < rh:
-                    rw, rh = rh, rw
-                aspect = rw / rh
-                # Bien ngang VN: ty le ~2.0 ~ 5.0
-                # Bien vuong VN (2 dong): ty le ~0.8 ~ 1.5
-                # Gop chung: 0.8 ~ 6.0
-                if aspect < 0.8 or aspect > 6.0:
-                    continue
-
-                # --- LOC 3: Do chu nhat (Rectangularity / Solidity) ---
-                # Bien so la hinh chu nhat → contour_area / rect_area cao (> 0.35)
-                # Hinh dang bat ky (canh cua, guong xe) → solidity thap
-                rect_area = rw * rh
-                solidity = area / rect_area if rect_area > 0 else 0
-                if solidity < 0.35:
-                    continue
-
-                # --- LOC 4: Phuong sai Grayscale (Co chu ben trong?) ---
-                # Bien so co ky tu → do tuong phan cao → phuong sai lon (> 800)
-                # Vung tron tru (than xe, mat duong) → phuong sai thap
-                x_b, y_b, w_b, h_b = cv2.boundingRect(c)
-                roi = gray[y_b:y_b+h_b, x_b:x_b+w_b]
-                if roi.size == 0:
-                    continue
-                variance = float(np.var(roi))
-                if variance < 800:
-                    continue
-
-                # Tinh diem cho ung vien
-                # approxPolyDP: Neu contour xap xi thanh tu giac (4 dinh) → rat co kha nang la bien so
-                peri = cv2.arcLength(c, True)
-                approx = cv2.approxPolyDP(c, 0.04 * peri, True)
-
-                score = solidity * 0.4 + min(variance / 5000, 1.0) * 0.3 + area_ratio * 0.1
-                if len(approx) == 4:
-                    score += 0.3  # Bonus lon cho hinh 4 canh (chu nhat)
-                elif len(approx) >= 4 and len(approx) <= 6:
-                    score += 0.1  # Bonus nho cho hinh gan chu nhat
-
-                p(f"      -> [CROP] Ung vien: area={area_ratio:.1%}, aspect={aspect:.1f}, solid={solidity:.2f}, var={variance:.0f}, vert={len(approx)}, score={score:.3f}")
-                candidates.append((score, c, rect))
-
-            if not candidates:
-                p("      -> [CROP] Khong co ung vien nao qua bo loc. Tra anh goc.")
-                return img
-
-            # Chon ung vien tot nhat (score cao nhat)
-            candidates.sort(key=lambda x: x[0], reverse=True)
-            best_score, best_contour, best_rect = candidates[0]
-            p(f"      -> [CROP] Chon ung vien tot nhat (score={best_score:.3f})")
-
-            # ============================================
-            # BUOC 5: Lay 4 goc + Scale len anh goc
-            # ============================================
-            box_small = cv2.boxPoints(best_rect)
-            scale_up = 1.0 / SCALE_FACTOR  # ~ 5.56
-            box_orig = box_small * scale_up
-            # Clamp toa do vao gioi han anh goc
-            box_orig[:, 0] = np.clip(box_orig[:, 0], 0, w_orig - 1)
-            box_orig[:, 1] = np.clip(box_orig[:, 1], 0, h_orig - 1)
-
-            # ============================================
-            # BUOC 6: Perspective Transform - Nan thang bien nghieng
-            # ============================================
-            ordered = self._order_points(box_orig)
-            (tl, tr, br, bl) = ordered
-
-            # Tinh kich thuoc hinh chu nhat dich
-            width_top = np.linalg.norm(tr - tl)
-            width_bot = np.linalg.norm(br - bl)
-            dst_w = int(max(width_top, width_bot))
-
-            height_left = np.linalg.norm(bl - tl)
-            height_right = np.linalg.norm(br - tr)
-            dst_h = int(max(height_left, height_right))
-
-            if dst_w < 10 or dst_h < 10:
-                p("      -> [CROP] Vung crop qua nho sau scale. Tra anh goc.")
-                return img
-
-            # Padding 10% moi chieu de khong cat sat mep bien so
-            pad_x = int(dst_w * 0.10)
-            pad_y = int(dst_h * 0.10)
-
-            src_padded = np.array([
-                [max(0, tl[0] - pad_x), max(0, tl[1] - pad_y)],
-                [min(w_orig - 1, tr[0] + pad_x), max(0, tr[1] - pad_y)],
-                [min(w_orig - 1, br[0] + pad_x), min(h_orig - 1, br[1] + pad_y)],
-                [max(0, bl[0] - pad_x), min(h_orig - 1, bl[1] + pad_y)]
-            ], dtype="float32")
-
-            dst_w_padded = dst_w + 2 * pad_x
-            dst_h_padded = dst_h + 2 * pad_y
-
-            dst = np.array([
-                [0, 0],
-                [dst_w_padded - 1, 0],
-                [dst_w_padded - 1, dst_h_padded - 1],
-                [0, dst_h_padded - 1]
-            ], dtype="float32")
-
-            M = cv2.getPerspectiveTransform(src_padded, dst)
-            warped = cv2.warpPerspective(img, M, (dst_w_padded, dst_h_padded))
-
-            # ============================================
-            # BUOC 7: Resize ve do phan giai vua phai cho OCR
-            # ============================================
-            TARGET_WIDTH = 450
-            warp_h, warp_w = warped.shape[:2]
-            if warp_w > TARGET_WIDTH:
-                ratio = TARGET_WIDTH / warp_w
-                warped = cv2.resize(warped, (TARGET_WIDTH, int(warp_h * ratio)), interpolation=cv2.INTER_AREA)
-            elif warp_w < 200:
-                ratio = 300 / warp_w
-                warped = cv2.resize(warped, (300, int(warp_h * ratio)), interpolation=cv2.INTER_CUBIC)
-
-            p(f"      -> [CROP] Deskew thanh cong! Kich thuoc cuoi: {warped.shape[1]}x{warped.shape[0]}")
-            return warped
-
+            # 1. Chuyển sang ảnh xám
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # 2. Nắn thẳng ảnh (Deskew) bằng HoughLinesP
+            edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+            lines = cv2.HoughLinesP(edges, 1, np.pi/180, 100, minLineLength=100, maxLineGap=10)
+            angle = 0
+            if lines is not None:
+                angles = []
+                for line in lines:
+                    x1, y1, x2, y2 = line.ravel()
+                    # Bỏ qua các đường thẳng đứng
+                    if x2 - x1 == 0:
+                        continue
+                    a = np.degrees(np.arctan((y2 - y1) / (x2 - x1)))
+                    # Chỉ lấy các góc nghiêng nhẹ (-45 đến 45 độ)
+                    if -45 < a < 45:
+                        angles.append(a)
+                
+                if angles:
+                    angle = np.median(angles)
+                    if abs(angle) > 2: # Chỉ xoay nếu góc nghiêng đáng kể
+                        p(f"      -> [OPENCV] Phat hien bien so bi nghieng {angle:.1f} do. Dang nan thang...")
+                        (h, w) = img.shape[:2]
+                        center = (w // 2, h // 2)
+                        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+                        gray = cv2.warpAffine(gray, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+            
+            # 3. Tăng độ tương phản bằng CLAHE (Contrast Limited Adaptive Histogram Equalization)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(gray)
+            
+            # 4. Lọc nhiễu song phương (Bilateral Filter)
+            # Giữ lại độ sắc nét của viền chữ, xóa mờ nhiễu bụi
+            filtered = cv2.bilateralFilter(enhanced, 11, 17, 17)
+            
+            # 5. Làm nét viền chữ (Sharpen)
+            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+            sharpened = cv2.filter2D(filtered, -1, kernel)
+            
+            return sharpened
+            
         except Exception as e:
-            p(f"      -> [CROP LOI] {e}")
-            return img  # Fallback: tra anh goc neu loi
+            p(f"      -> [OPENCV LOI] Khong the tien xu ly: {e}")
+            return img
 
     def _run_easyocr(self, img):
         """
         Nhận diện biển số Offline bằng mô hình AI EasyOCR.
-        Dùng detail=1 để lấy độ tin cậy (confidence) → lọc bỏ chữ rác có confidence thấp.
+        Chạy 2 luồng: Ảnh thô (RAW) và Ảnh qua xử lý OpenCV (OPENCV).
         """
         if not self.reader: 
             return "Thieu Thiet Lap"
-        try:
-            # detail=1 trả về (bbox, text, confidence) thay vì chỉ text
-            # Giúp lọc được các đoạn chữ rác mà EasyOCR đọc nhầm từ nền ảnh
-            results = self.reader.readtext(img, allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', detail=1)
-            if not results:
-                return None
             
-            # Ngưỡng tin cậy tối thiểu 30% - dưới mức này là chữ rác/nhiễu
+        def read_img(img_data, tag="RAW"):
+            results = self.reader.readtext(img_data, allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', detail=1)
+            if not results: return None, 0
+            
             CONFIDENCE_THRESHOLD = 0.3
             filtered = []
             for (bbox, text, conf) in results:
                 if conf >= CONFIDENCE_THRESHOLD:
                     filtered.append((text, conf))
-                    p(f"      -> [EASYOCR] '{text}' (tin cay: {conf:.0%})")
-                else:
-                    p(f"      -> [EASYOCR] Bo qua '{text}' (tin cay qua thap: {conf:.0%})")
+                    p(f"      -> [EASYOCR-{tag}] '{text}' (tin cay: {conf:.0%})")
             
-            if not filtered:
-                p("      -> [EASYOCR] Tat ca ky tu deu duoi nguong tin cay 30%. Bo qua.")
-                return None
+            if not filtered: return None, 0
             
-            # Nối các dòng chữ đạt chuẩn lại với nhau (xử lý biển vuông 2 dòng)
             raw = "".join([t for t, c in filtered])
             processed = self._post_process(raw)
-            return processed if processed else raw
+            avg_conf = sum([c for t, c in filtered]) / len(filtered)
+            
+            # Ưu tiên chuỗi đã khớp Regex VN
+            if processed:
+                return processed, avg_conf + 1.0 # Cộng 1.0 điểm nếu khớp chuẩn format
+            return raw, avg_conf
+
+        try:
+            # Lần 1: Chạy trên ảnh Crop thô (RAW)
+            res_raw, conf_raw = read_img(img, "RAW")
+            
+            # Lần 2: Chạy trên ảnh đã qua bộ lọc OpenCV cực nét
+            preprocessed_img = self._preprocess_for_ocr(img)
+            res_cv, conf_cv = read_img(preprocessed_img, "OPENCV")
+            
+            # So sánh và chọn kết quả tốt nhất
+            if conf_cv > conf_raw and res_cv is not None:
+                p("      -> [CHOT] Chon ket qua tu OpenCV Enhancement.")
+                return res_cv
+            elif res_raw is not None:
+                p("      -> [CHOT] Chon ket qua tu anh RAW.")
+                return res_raw
+            else:
+                p("      -> [EASYOCR] Khong doc duoc bien so hop le o ca 2 che do.")
+                return None
+                
         except Exception as e:
             p(f"      -> [EASYOCR LOI] {e}")
             return "Loi Phan Mem"

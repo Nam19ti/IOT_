@@ -131,101 +131,120 @@ class SyncManager:
 
     def _process_single_sync(self, timestamp, plate, speed, direction, img_path):
         """
-        Hàm lõi: Thực thi việc đẩy 1 bản ghi lên 3 nền tảng Cloud.
-        Trả về True nếu thành công (hoặc cấu hình bị tắt).
-        Trả về False nếu Lỗi Mạng (Để hàng đợi không bị xóa).
+        Hàm lõi: Phân loại xe (Quen/Lạ/Cảnh báo) qua MongoDB.
+        Đẩy lên Firebase và Telegram tương ứng.
         """
         config = self.controller.config
+        all_success = True
+        
+        # Biến trạng thái
+        vehicle_type = "stranger" # "known", "warning", "stranger"
+        telegram_id = None
         
         # ==========================================
-        # BƯỚC 1: ĐẨY DỮ LIỆU LÊN FIREBASE REALTIME DB
+        # BƯỚC 1: TRA CỨU & LƯU LÊN MONGODB
         # ==========================================
-        if config.get("enable_firebase", True):
-            firebase_url = config.get("firebase_url", "").strip()
-            if firebase_url:
-                # Chuẩn hóa URL Firebase (Thêm https và .json vào cuối để gọi API)
-                if not firebase_url.startswith("http"):
-                    firebase_url = "https://" + firebase_url
-                if not firebase_url.endswith('/'):
-                    firebase_url += '/'
-                firebase_url += "queue.json"
+        mongo_uri = config.get("mongo_uri", "").strip()
+        if mongo_uri and pymongo:
+            try:
+                import re
+                client = pymongo.MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+                db = client['iot_thanglong']
                 
-                b64 = self._img_to_b64(img_path)
-                payload = {
-                    "car_id": "CAR_" + str(timestamp),
-                    "speed": speed,
-                    "direction": direction,
+                # Fetch all warnings and vehicles to compare ignoring special characters
+                clean_plate = re.sub(r'[^A-Z0-9]', '', plate.upper())
+                
+                warn_record = None
+                for w in db['warnings'].find():
+                    if re.sub(r'[^A-Z0-9]', '', str(w.get("plate", "")).upper()) == clean_plate:
+                        warn_record = w
+                        break
+                        
+                if warn_record:
+                    vehicle_type = "warning"
+                    p(f"  -> [1/2] MongoDB: CAUTION! Biển số cảnh báo {plate}")
+                    # Báo tín hiệu ra UI
+                    self.controller.last_warning_time = time.time()
+                    self.controller.last_warning_plate = plate
+                else:
+                    record = None
+                    for v in db['vehicles'].find():
+                        if re.sub(r'[^A-Z0-9]', '', str(v.get("plate", "")).upper()) == clean_plate:
+                            record = v
+                            break
+                            
+                    if record:
+                        vehicle_type = "known"
+                        telegram_id = record.get("telegram_id")
+                        p(f"  -> [1/2] MongoDB: Xe quen (ID = {telegram_id})")
+                    else:
+                        vehicle_type = "stranger"
+                        p(f"  -> [1/2] MongoDB: Xe lạ {plate}")
+                        
+                        # XỬ LÝ XE LẠ: LƯU VÀO MONGODB COLLECTION STRANGERS
+                        b64 = self._img_to_b64(img_path)
+                        # Xóa cũ trước khi chèn mới để tránh trùng (tuỳ chọn)
+                        db['strangers'].delete_one({"plate": plate})
+                        db['strangers'].insert_one({
+                            "plate": plate,
+                            "image_base64": b64,
+                            "image_filename": os.path.basename(img_path),
+                            "timestamp": int(timestamp)
+                        })
+                        p(f"  -> [1/2] MongoDB: Đã lưu ảnh Xe lạ vào DB.")
+                        
+            except Exception as e:
+                p(f"  -> [1/2] MongoDB LỖI (Mất Mạng?): {e}")
+                # Cập nhật ra UI để người dùng biết là xe đang qua nhưng mất mạng
+                self.controller.last_violation = {
                     "plate": plate,
-                    "image_base64": b64,
-                    "timestamp": int(timestamp)
+                    "status": "Mất mạng - Đang lưu tạm",
+                    "proc_time": 0,
+                    "ts": time.strftime("%H:%M:%S", time.localtime(timestamp/1000)),
+                    "image": os.path.basename(img_path)
                 }
-                try:
-                    # Gọi API REST POST của Firebase
-                    r = requests.post(firebase_url, json=payload, timeout=10.0)
-                    r.raise_for_status() # Sinh lỗi nếu mã HTTP > 400
-                    p("  -> [1/3] Firebase: OK")
-                except Exception as e:
-                    p(f"  -> [1/3] Firebase LỖI: {e}")
-                    return False # Báo lỗi mạng để Fallback (giữ lại trong hàng đợi)
-            else:
-                p("  -> [1/3] Firebase: Bỏ qua (Chưa cấu hình URL)")
+                return False # Lỗi DB, không biết quen lạ, trả False để chờ lại
         else:
-            p("  -> [1/3] Firebase: Tắt theo cài đặt")
+            p("  -> [1/2] MongoDB: Bỏ qua (Thiếu URI hoặc chưa cài pymongo)")
+            # Không có Mongo thì coi như xong luôn, không treo hàng đợi
+            return True
 
         # ==========================================
-        # BƯỚC 2: TRA CỨU ID CHỦ PHƯƠNG TIỆN TRONG MONGODB
+        # BƯỚC 2: GỬI TELEGRAM BOT (Chỉ áp dụng xe Quen/Cảnh báo)
         # ==========================================
         if config.get("enable_telegram", True):
-            mongo_uri = config.get("mongo_uri")
+            telegram_token = config.get("telegram_token", "").strip()
             
-        # Nếu người dùng không điền Link Mongo, tự động pass qua luôn không lưu trữ rườm rà
-        if not mongo_uri or not pymongo:
-            p("  -> [2/3] MongoDB: Bỏ qua (Thiếu URI hoặc chưa cài pymongo)")
-            return True 
-
-        telegram_id = None
-        try:
-            # Kết nối Mongo với Timeout ngắn (5s) để không bị treo
-            client = pymongo.MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
-            db = client['iot_thanglong']
-            col = db['vehicles']
-            
-            # Tìm biển số trong bộ sưu tập (Collection)
-            record = col.find_one({"plate": plate})
-            if record and "telegram_id" in record:
-                telegram_id = record["telegram_id"]
-                p(f"  -> [2/3] MongoDB: Tìm thấy Telegram ID = {telegram_id}")
+            target_chat_id = None
+            if vehicle_type == "known" and telegram_id:
+                target_chat_id = telegram_id
+            elif vehicle_type == "warning":
+                target_chat_id = config.get("admin_telegram_id", "8785323128").strip()
+                
+            if target_chat_id and telegram_token:
+                try:
+                    url = f"https://api.telegram.org/bot{telegram_token}/sendPhoto"
+                    prefix = "⚠️ XE CẢNH BÁO XUẤT HIỆN" if vehicle_type == "warning" else "🚗 PHÁT HIỆN XE VÀO TRẠM"
+                    caption = f"{prefix}\n- Biển số: {plate}\n- Thời gian: {time.ctime(int(timestamp)/1000)}"
+                    
+                    if os.path.exists(img_path):
+                        with open(img_path, 'rb') as photo:
+                            data = {"chat_id": target_chat_id, "caption": caption}
+                            files = {"photo": photo}
+                            r = requests.post(url, data=data, files=files, timeout=15.0)
+                            r.raise_for_status()
+                        p(f"  -> [2/2] Telegram: Đã gửi thông báo cho {target_chat_id}!")
+                    else:
+                        p("  -> [3/3] Telegram: Không tìm thấy file ảnh vật lý trên ổ cứng!")
+                except Exception as e:
+                    p(f"  -> [3/3] Telegram LỖI: {e}")
+                    all_success = False
             else:
-                p(f"  -> [2/3] MongoDB: Không tìm thấy Telegram ID nào cho biển số {plate}")
-                return True # Xe khách lạ, không có telegram để gửi -> Pass qua dòng này để xóa khỏi queue
-        except Exception as e:
-            p(f"  -> [2/3] MongoDB LỖI: {e}")
-            return False # Lỗi kết nối CSDL, trả False để chờ vòng lặp sau thử lại
-
-        # ==========================================
-        # BƯỚC 3: GỬI HÌNH ẢNH VÀ CẢNH BÁO QUA TELEGRAM BOT
-        # ==========================================
-        telegram_token = config.get("telegram_token")
-        if telegram_id and telegram_token:
-            try:
-                # Dùng Bot API của Telegram để nã tin nhắn hình ảnh (Multipart FormData)
-                url = f"https://api.telegram.org/bot{telegram_token}/sendPhoto"
-                caption = f"🚗 PHÁT HIỆN XE VÀO TRẠM\n- Biển số: {plate}\n- Thời gian: {time.ctime(int(timestamp)/1000)}"
-                
-                if os.path.exists(img_path):
-                    with open(img_path, 'rb') as photo:
-                        data = {"chat_id": telegram_id, "caption": caption}
-                        files = {"photo": photo}
-                        r = requests.post(url, data=data, files=files, timeout=15.0)
-                        r.raise_for_status()
-                    p("  -> [3/3] Telegram: Đã gửi tin nhắn thành công!")
+                if vehicle_type == "stranger":
+                    p("  -> [3/3] Telegram: Bỏ qua (Do là xe lạ)")
                 else:
-                    p("  -> [3/3] Telegram: Không tìm thấy file ảnh vật lý trên ổ cứng!")
-            except Exception as e:
-                p(f"  -> [3/3] Telegram LỖI: {e}")
-                return False # Lỗi gửi tin, giữ trong queue để gửi bù
+                    p("  -> [3/3] Telegram: Không gửi (Thiếu Token hoặc ID)")
         else:
-            p("  -> [2-3/3] Telegram: Tắt theo cài đặt")
+            p("  -> [3/3] Telegram: Tắt theo cài đặt")
                 
-        # Tất cả các bước hoàn tất hoặc bị bỏ qua có chủ đích
-        return True
+        return all_success

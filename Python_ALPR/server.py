@@ -3,7 +3,7 @@ import time
 # Import thư viện xử lý đa luồng, giúp ứng dụng chạy nền các tác vụ nặng (như load AI, Cloudflare)
 import threading
 # Import Flask - Web framework nhẹ để tạo API và Web server
-from flask import Flask, Response, jsonify, request, send_file
+from flask import Flask, Response, jsonify, request, send_file, session
 # Import OpenCV để xử lý ảnh (đọc, ghi ảnh, tiền xử lý nếu cần)
 import cv2
 # Import thư viện os để làm việc với đường dẫn, tệp tin và thư mục hệ thống
@@ -26,6 +26,140 @@ def create_app(controller):
     Truyền vào đối tượng controller chứa toàn bộ trạng thái (state) và cấu hình của hệ thống.
     """
     app = Flask(__name__)
+    app.secret_key = controller.config.get("secret_key", "iot-thanglong-secret-key-123")
+    
+    @app.before_request
+    def require_login():
+        # Các đường dẫn được phép truy cập không cần đăng nhập
+        allowed_endpoints = ['login', 'trigger_capture', 'serve_image']
+        if request.endpoint in allowed_endpoints or (request.path and request.path.startswith('/static')):
+            return
+            
+        if not session.get('logged_in'):
+            # Nếu là request API -> Trả về lỗi 401 JSON
+            if request.path.startswith('/api/') or request.path in ['/get_stats', '/capture_only', '/process_latest', '/test_ocr', '/set_settings']:
+                return jsonify({"success": False, "error": "Unauthorized"}), 401
+            # Nếu là request giao diện Web -> Trả về trang HTML Login
+            from web_html import get_login_html
+            return get_login_html(controller)
+            
+    @app.route('/login', methods=['POST'])
+    def login():
+        data = request.json or {}
+        pwd = data.get("password", "")
+        admin_pwd = controller.config.get("admin_password", "admin")
+        if pwd == admin_pwd:
+            session['logged_in'] = True
+            return jsonify({"success": True})
+        return jsonify({"success": False, "error": "Sai mật khẩu"})
+        
+    @app.route('/logout', methods=['POST'])
+    def logout():
+        session.pop('logged_in', None)
+        return jsonify({"success": True})
+        
+    @app.route('/api/strangers', methods=['GET'])
+    def get_strangers():
+        """Lấy danh sách xe lạ từ MongoDB để hiển thị lên Web UI"""
+        mongo_uri = controller.config.get("mongo_uri")
+        if not mongo_uri:
+            return jsonify({})
+        try:
+            import pymongo
+            client = pymongo.MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+            db = client['iot_thanglong']
+            
+            # Lấy tất cả từ collection strangers, sắp xếp mới nhất lên đầu
+            strangers = db['strangers'].find().sort("timestamp", -1)
+            result = {}
+            for s in strangers:
+                key = str(s['_id'])
+                result[key] = {
+                    "plate": s.get("plate", "Unknown"),
+                    "timestamp": s.get("timestamp", 0),
+                    "image_base64": s.get("image_base64", "")
+                }
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"error": str(e)})
+
+    @app.route('/api/stranger/action', methods=['POST'])
+    def handle_stranger():
+        """Xử lý Duyệt / Xóa / Cảnh báo xe lạ bằng MongoDB"""
+        data = request.json
+        action = data.get("action") # "approve", "warn", "delete"
+        plate = data.get("plate")
+        key = data.get("key") # ObjectID string trên Mongo
+        
+        mongo_uri = controller.config.get("mongo_uri")
+        if not mongo_uri:
+            return jsonify({"success": False, "error": "Thiếu MongoDB URI"})
+            
+        try:
+            import pymongo
+            import re
+            from bson.objectid import ObjectId
+            
+            client = pymongo.MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+            db = client['iot_thanglong']
+            
+            clean_plate = re.sub(r'[^A-Z0-9]', '', plate.upper())
+            
+            # 1. Thao tác thêm vào Vehicles hoặc Warnings
+            if action == "approve":
+                found = False
+                for v in db['vehicles'].find():
+                    if re.sub(r'[^A-Z0-9]', '', str(v.get("plate", "")).upper()) == clean_plate:
+                        found = True; break
+                if not found:
+                    db['vehicles'].insert_one({"plate": plate, "telegram_id": "", "name": "Khách quen (Web)"})
+                    
+            elif action == "warn":
+                found = False
+                for w in db['warnings'].find():
+                    if re.sub(r'[^A-Z0-9]', '', str(w.get("plate", "")).upper()) == clean_plate:
+                        found = True; break
+                if not found:
+                    db['warnings'].insert_one({"plate": plate, "reason": "Cảnh báo từ Web"})
+                    
+            elif action == "recheck":
+                record = None
+                for v in db['vehicles'].find():
+                    if re.sub(r'[^A-Z0-9]', '', str(v.get("plate", "")).upper()) == clean_plate:
+                        record = v
+                        break
+                if record:
+                    telegram_id = record.get("telegram_id")
+                    s_record = db['strangers'].find_one({"_id": ObjectId(key)}) if key else None
+                    if telegram_id and s_record and controller.config.get("enable_telegram", True):
+                        telegram_token = controller.config.get("telegram_token", "").strip()
+                        if telegram_token:
+                            import requests, os, time
+                            url = f"https://api.telegram.org/bot{telegram_token}/sendPhoto"
+                            caption = f"🚗 PHÁT HIỆN XE VÀO TRẠM\n- Biển số: {plate}\n- Thời gian: {time.ctime(int(s_record.get('timestamp', time.time()*1000))/1000)}"
+                            img_filename = s_record.get("image_filename")
+                            sent = False
+                            if img_filename:
+                                img_path = os.path.join(os.path.dirname(__file__), 'history', img_filename)
+                                if os.path.exists(img_path):
+                                    with open(img_path, 'rb') as photo:
+                                        requests.post(url, data={"chat_id": telegram_id, "caption": caption}, files={"photo": photo}, timeout=15.0)
+                                    sent = True
+                            if not sent:
+                                requests.post(f"https://api.telegram.org/bot{telegram_token}/sendMessage", data={"chat_id": telegram_id, "text": caption}, timeout=15.0)
+                    
+                    if key: db['strangers'].delete_one({"_id": ObjectId(key)})
+                    return jsonify({"success": True, "result": "known"})
+                else:
+                    return jsonify({"success": True, "result": "stranger"})
+            
+            # 2. Xóa khỏi danh sách Xe Lạ trên MongoDB (Chỉ áp dụng cho các nút Duyệt/Cảnh báo/Xóa bỏ)
+            if key and action != "recheck":
+                db['strangers'].delete_one({"_id": ObjectId(key)})
+                
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)})
     
     @app.route('/captures/<filename>')
     def serve_image(filename):
@@ -54,7 +188,9 @@ def create_app(controller):
             "ai_ready": controller.ai_ready, # Cờ báo hiệu AI engine đã sẵn sàng
             "last_time": controller.last_process_time, # Thời gian tiêu tốn cho lần xử lý OCR gần nhất
             "last_violation": controller.last_violation, # Thông tin chi tiết của lần nhận diện gần nhất
-            "last_capture_ts": controller.last_capture_ts # Thời gian chụp ảnh lần cuối
+            "last_capture_ts": controller.last_capture_ts, # Thời gian chụp ảnh lần cuối
+            "last_warning_time": getattr(controller, 'last_warning_time', 0),
+            "last_warning_plate": getattr(controller, 'last_warning_plate', "")
         })
         
     @app.route('/capture_only')
@@ -84,7 +220,34 @@ def create_app(controller):
             p(f"    -> [LOI] {e}")
             return jsonify({"success": False, "error": str(e)})
 
-    @app.route('/process_latest')
+        @app.route('/open_gate', methods=['GET', 'POST'])
+    def open_gate():
+        import requests
+        try:
+            requests.get("http://192.168.137.199/open_gate", timeout=3)
+            return jsonify({"success": True})
+        except:
+            return jsonify({"success": False, "error": "Khong the ket noi den ESP32"})
+
+    @app.route('/open_gate_manual', methods=['GET', 'POST'])
+    def open_gate_manual():
+        import requests
+        try:
+            requests.get("http://192.168.137.199/open_gate_manual", timeout=3)
+            return jsonify({"success": True})
+        except:
+            return jsonify({"success": False, "error": "Khong the ket noi den ESP32"})
+
+    @app.route('/close_gate', methods=['GET', 'POST'])
+    def close_gate():
+        import requests
+        try:
+            requests.get("http://192.168.137.199/close_gate", timeout=3)
+            return jsonify({"success": True})
+        except:
+            return jsonify({"success": False, "error": "Khong the ket noi den ESP32"})
+
+@app.route('/process_latest')
     def process_latest():
         """
         [Route] /process_latest
@@ -317,9 +480,13 @@ def create_app(controller):
             # 3. Chọn chế độ AI (EasyOCR / Gemini)
             if 'ai_mode' in d:
                 controller.config.set('ai_mode', d['ai_mode'])
-            # 4. Telegram Bot Token
+            # 4. Telegram Bot Token & Admin ID & Password
             if 'telegram_token' in d:
                 controller.config.set('telegram_token', d['telegram_token'])
+            if 'admin_telegram_id' in d:
+                controller.config.set('admin_telegram_id', d['admin_telegram_id'])
+            if 'admin_password' in d:
+                controller.config.set('admin_password', d['admin_password'])
             # 5. MongoDB URI
             if 'mongo_uri' in d:
                 controller.config.set('mongo_uri', d['mongo_uri'])
@@ -331,6 +498,9 @@ def create_app(controller):
                 controller.config.set('enable_firebase', d['enable_firebase'])
             if 'enable_telegram' in d:
                 controller.config.set('enable_telegram', d['enable_telegram'])
+            # 8. ROI (Region of Interest)
+            if 'roi' in d:
+                controller.config.set('roi', d['roi'])
             
             # Áp dụng thay đổi nóng (hot-reload) vào module AI mà không cần khởi động lại server
             if controller.ai_engine:
@@ -373,14 +543,16 @@ def load_ai_bg(controller):
     p("  EASYOCR ĐÃ SẴN SÀNG NHẬN DIỆN 100% OFFLINE!")
     p("==========================================\n")
 
-def start_cloudflare_tunnel(port=5000):
+def start_cloudflare_tunnel(controller, port=5000):
     """
     Hàm tạo đường hầm (Tunnel) Cloudflare.
     Mục đích: Cho phép người dùng truy cập trang Web UI và các API từ bất kỳ đâu 
     trên Internet thông qua URL Public (xxx.trycloudflare.com) thay vì chỉ dùng được mạng nội bộ (LAN).
+    Đồng thời tự động gửi link này về Telegram Admin.
     """
     try:
         from pycloudflared import try_cloudflare
+        import requests
         p("[CLOUDFLARE] Dang mo Cloudflare Tunnel...")
         # Tạo tunnel ánh xạ port 5000 của localhost ra ngoài mạng Internet
         tunnel = try_cloudflare(port=port, verbose=False)
@@ -388,6 +560,19 @@ def start_cloudflare_tunnel(port=5000):
         p(f"  TRUY CAP TU XA QUA INTERNET:")
         p(f"  >> {tunnel.tunnel}")
         p("="*50)
+        
+        # Gửi link qua Telegram
+        token = controller.config.get("telegram_token", "").strip()
+        admin_id = controller.config.get("admin_telegram_id", "8785323128").strip()
+        if token and admin_id:
+            try:
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                msg = f"🟢 HỆ THỐNG ALPR ĐÃ KHỞI ĐỘNG!\n🌐 Link truy cập Web UI từ xa:\n{tunnel.tunnel}"
+                requests.post(url, json={"chat_id": admin_id, "text": msg}, timeout=10)
+                p(f"[CLOUDFLARE] Đã gửi link cho Admin Telegram ({admin_id})")
+            except Exception as e:
+                p(f"[CLOUDFLARE] Không thể gửi link qua Telegram: {e}")
+                
     except ImportError:
         # Xử lý trường hợp chưa cài đặt thư viện
         p("[CLOUDFLARE] Chua cai pycloudflared. Chay: pip install pycloudflared")
@@ -415,7 +600,7 @@ if __name__ == '__main__':
     threading.Thread(target=load_ai_bg, args=(controller,), daemon=True).start()
     
     # 4. Chạy luồng nền (Thread) tạo Cloudflare Tunnel: Khởi động song song để lấy link Public
-    threading.Thread(target=start_cloudflare_tunnel, args=(5000,), daemon=True).start()
+    threading.Thread(target=start_cloudflare_tunnel, args=(controller, 5000), daemon=True).start()
     
     # 5. Khởi tạo đối tượng Flask App
     app = create_app(controller)

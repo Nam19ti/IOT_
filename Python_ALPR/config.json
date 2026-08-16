@@ -8,5 +8,11 @@
     "firebase_url": "https://test-a2b8e-default-rtdb.firebaseio.com/",
     "enable_firebase": true,
     "enable_telegram": true,
-    "tb_token": ""
+    "roi": {
+        "x": 0.08422459893048129,
+        "y": 0.15201900237529692,
+        "w": 0.7807486631016043,
+        "h": 0.7363420427553444
+    },
+    "admin_telegram_id": "8785323128"
 }

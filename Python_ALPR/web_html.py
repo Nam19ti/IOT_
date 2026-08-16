@@ -75,6 +75,21 @@ def get_html(controller):
                             font-family: 'Inter',sans-serif; font-size: 0.9rem; transition: border-color 0.2s; }}
         input:focus {{ outline: none; border-color: var(--primary); }}
 
+
+        /* === TABS === */
+        .tab-container {{ display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }}
+        .tab-btn {{ padding: 12px 24px; border: none; background: #1e293b; color: #94a3b8; cursor: pointer; border-radius: 8px; font-weight: bold; font-size: 1rem; transition: 0.3s; }}
+        .tab-btn.active {{ background: #3b82f6; color: white; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4); }}
+        .tab-btn:hover:not(.active) {{ background: #334155; color: white; }}
+        
+        /* === STRANGER ITEM === */
+        .stranger-item {{ background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 15px; margin-bottom: 15px; display: flex; align-items: center; gap: 20px; }}
+        .stranger-img {{ width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 2px solid #475569; }}
+        .stranger-info {{ flex: 1; }}
+        .stranger-actions {{ display: flex; gap: 10px; }}
+        
+        .badge-count {{ background: #ef4444; color: white; border-radius: 50%; padding: 2px 8px; font-size: 0.8rem; margin-left: 8px; vertical-align: top; display: none; }}
+        .btn-logout {{ background: linear-gradient(135deg, #64748b, #475569); color: white; }}
         /* === BUTTONS === */
         .btn {{ padding: 10px 20px; border: none; border-radius: 9px; cursor: pointer;
                 font-weight: 700; font-size: 0.9rem; font-family: 'Inter',sans-serif;
@@ -106,13 +121,25 @@ def get_html(controller):
 <body>
     <header>
         <h1>&#128663; TRAM THU PHI VETC</h1>
-        <p>EasyOCR Offline &nbsp;|&nbsp; IP Webcam &nbsp;|&nbsp; LAN HTTP</p>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <p>EasyOCR Offline &nbsp;|&nbsp; IP Webcam &nbsp;|&nbsp; LAN HTTP</p>
+            <button class="btn btn-logout" onclick="logout()" style="padding: 5px 15px; font-size: 0.8rem;">Đăng Xuất</button>
+        </div>
     </header>
 
     <div id="ai_status_bar">AI dang khoi dong... Vui long doi!</div>
 
     <div class="wrap">
 
+
+        <!-- TABS NAV -->
+        <div class="tab-container">
+            <button class="tab-btn active" id="btn_tab_system" onclick="switchTab('system')">Trạm Thu Phí</button>
+            <button class="tab-btn" id="btn_tab_stranger" onclick="switchTab('stranger')">Xe Khách Lạ <span class="badge-count" id="stranger_badge">0</span></button>
+        </div>
+
+        <!-- TAB: SYSTEM -->
+        <div id="tab_system">
         <!-- KET QUA NHAN DIEN -->
         <div class="card">
             <div class="card-title">
@@ -222,6 +249,25 @@ def get_html(controller):
             </div>
         </div>
 
+
+        </div><!-- end #tab_system -->
+
+        <!-- TAB: STRANGERS -->
+        <div id="tab_stranger" style="display: none;">
+            <div class="card">
+                <div class="card-title">&#128680; Xử Lý Xe Lạ</div>
+                <p style="color:#64748b; font-size:0.88rem; text-align:center; margin-bottom:1rem;">
+                    Các xe chưa có trong hệ thống. Bạn có thể duyệt thêm hoặc đưa vào cảnh báo.
+                </p>
+                <div style="text-align: right; margin-bottom: 10px;">
+                    <button class="btn btn-blue" onclick="loadStrangers()">&#8635; Làm Mới</button>
+                </div>
+                <div id="stranger_list">
+                    <p style="text-align:center; color:#64748b;">Đang tải dữ liệu...</p>
+                </div>
+            </div>
+        </div>
+
     </div><!-- end .wrap -->
 
     <div id="_toast"></div>
@@ -275,10 +321,13 @@ def get_html(controller):
     // ===================== GATE CONTROL =====================
     function gate(path) {{
         toast('Dang gui lenh...');
-        fetch('http://' + IOT2_IP + path)
-            .then(r=>r.text())
-            .then(txt=>toast('✅ ' + txt))
-            .catch(()=>toast('❌ Khong ket noi duoc Mach 2 (' + IOT2_IP + ')!'));
+        fetch(path)
+            .then(r=>r.json())
+            .then(d=>{{
+                if(d.success) toast('✅ Đã gửi lệnh cổng!');
+                else toast('❌ Lỗi: ' + d.error);
+            }})
+            .catch(()=>toast('❌ Không thể gửi lệnh!'));
     }}
 
     // ===================== CAPTURE ONLY =====================
@@ -413,6 +462,148 @@ def get_html(controller):
 
     setInterval(updateStats, 2000);
     updateStats();
+
+    function logout() {{
+        fetch('/logout', {{method: 'POST'}}).then(()=> window.location.reload());
+    }}
+    // TABS LOGIC
+    function switchTab(tabId) {{
+        document.getElementById('tab_system').style.display = tabId === 'system' ? 'block' : 'none';
+        document.getElementById('tab_stranger').style.display = tabId === 'stranger' ? 'block' : 'none';
+        document.getElementById('btn_tab_system').className = tabId === 'system' ? 'tab-btn active' : 'tab-btn';
+        document.getElementById('btn_tab_stranger').className = tabId === 'stranger' ? 'tab-btn active' : 'tab-btn';
+        if (tabId === 'stranger') loadStrangers();
+    }}
+    
+    // STRANGERS LOGIC
+    function loadStrangers() {{
+        document.getElementById('stranger_list').innerHTML = '<p style="text-align:center; color:#64748b;">Đang tải...</p>';
+        fetch('/api/strangers').then(r=>r.json()).then(data => {{
+            if(data.error) {{
+                document.getElementById('stranger_list').innerHTML = `<p style="color:#ef4444;">Lỗi: ${{data.error}}</p>`;
+                return;
+            }}
+            let html = '';
+            let count = 0;
+            for(let key in data) {{
+                count++;
+                let item = data[key];
+                let timeStr = new Date(item.timestamp).toLocaleString('vi-VN');
+                html += `
+                <div class="stranger-item">
+                    <img src="data:image/jpeg;base64,${{item.image_base64}}" class="stranger-img">
+                    <div class="stranger-info">
+                        <div style="margin-bottom: 8px;">
+                            <span style="color:#e2e8f0; font-size:0.9rem;">Sửa biển:</span>
+                            <input type="text" id="plate_input_${{key}}" value="${{item.plate}}" style="background:#0f172a; color:#fff; border:1px solid #334155; padding:5px; border-radius:4px; font-weight:bold; font-size:1.1rem; width:120px; text-transform:uppercase;">
+                        </div>
+                        <div style="font-size:0.8rem; color:#94a3b8;">Thời gian: ${{timeStr}}</div>
+                    </div>
+                    <div class="stranger-actions" style="flex-wrap: wrap;">
+                        <button class="btn" style="background:#3b82f6;" onclick="recheckStranger('${{key}}')">🔍 Kiểm Tra</button>
+                        <button class="btn btn-green" onclick="handleStranger('${{key}}', document.getElementById('plate_input_${{key}}').value, 'approve')">Duyệt Quen</button>
+                        <button class="btn btn-red" onclick="handleStranger('${{key}}', document.getElementById('plate_input_${{key}}').value, 'warn')">Cảnh Báo</button>
+                        <button class="btn btn-logout" onclick="handleStranger('${{key}}', document.getElementById('plate_input_${{key}}').value, 'delete')">Xóa Bỏ</button>
+                    </div>
+                </div>`;
+            }}
+            if(count === 0) html = '<p style="text-align:center; color:#10b981;">Tuyệt vời! Không có xe lạ nào tồn đọng.</p>';
+            document.getElementById('stranger_list').innerHTML = html;
+            
+            // Update badge
+            let badge = document.getElementById('stranger_badge');
+            badge.innerText = count;
+            badge.style.display = count > 0 ? 'inline-block' : 'none';
+        }}).catch(e => {{
+            document.getElementById('stranger_list').innerHTML = '<p style="color:#ef4444;">Không thể kết nối Server</p>';
+        }});
+    }}
+    
+    function handleStranger(key, plate, action) {{
+        if(action === 'delete' && !confirm("Bạn chắc chắn muốn xóa dữ liệu xe này?")) return;
+        if(action === 'warn' && !confirm(`Bạn có chắc muốn ĐƯA BIỂN SỐ ${{plate}} VÀO SỔ ĐEN CẢNH BÁO?`)) return;
+        
+        fetch('/api/stranger/action', {{
+            method: 'POST', headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{ key: key, plate: plate, action: action }})
+        }}).then(r=>r.json()).then(d => {{
+            if(d.success) loadStrangers();
+            else alert("Lỗi: " + d.error);
+        }});
+    }}
+
+    function recheckStranger(key) {{
+        const plate = document.getElementById('plate_input_' + key).value;
+        if (!plate) return;
+        toast('Đang kiểm tra...');
+        fetch('/api/stranger/action', {{
+            method: 'POST', headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{ key: key, plate: plate, action: 'recheck' }})
+        }}).then(r=>r.json()).then(d=> {{
+            if(d.success) {{
+                if(d.result === 'known') {{
+                    alert('✅ Đã xác nhận đây là xe quen! Hệ thống đã tự động gửi thông báo Telegram cho người dùng.');
+                    loadStrangers();
+                }} else {{
+                    alert('❌ Biển số [' + plate + '] vẫn CHƯA CÓ trong hệ thống. Nếu đúng là xe lạ, hãy dùng nút Duyệt Quen mới, Cảnh Báo hoặc Xóa Bỏ!');
+                }}
+            }} else {{
+                alert('Lỗi: ' + d.error);
+            }}
+        }});
+    }}
+    
+    setTimeout(loadStrangers, 3000); // Tu dong load ngam badge
+
 </script>
+</body>
+</html>"""
+
+def get_login_html(controller):
+    return f"""<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng Nhập - VETC</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {{ --primary: #00d2ff; --bg: #0f172a; --card: #1e293b; --border: #334155; }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{ font-family: 'Inter', sans-serif; background: var(--bg); color: #f1f5f9; 
+                display: flex; align-items: center; justify-content: center; height: 100vh; }}
+        .login-box {{ background: var(--card); padding: 40px; border-radius: 12px; 
+                      border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+                      width: 100%; max-width: 400px; text-align: center; }}
+        .login-box h2 {{ margin-bottom: 20px; color: var(--primary); }}
+        input[type=password] {{ width: 100%; padding: 12px; margin-bottom: 20px; 
+                                background: #0f172a; border: 1px solid var(--border); 
+                                color: white; border-radius: 8px; font-size: 1rem; }}
+        button {{ width: 100%; padding: 12px; background: linear-gradient(135deg, #3a7bd5, #00d2ff); 
+                  color: white; border: none; border-radius: 8px; font-weight: bold; 
+                  font-size: 1rem; cursor: pointer; transition: 0.3s; }}
+        button:hover {{ filter: brightness(1.1); transform: translateY(-2px); }}
+        #error_msg {{ color: #ef4444; margin-top: 15px; font-size: 0.9rem; min-height: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h2>🔒 VETC ADMIN</h2>
+        <input type="password" id="pwd" placeholder="Nhập mật khẩu..." onkeypress="if(event.key==='Enter') doLogin()">
+        <button onclick="doLogin()">ĐĂNG NHẬP</button>
+        <div id="error_msg"></div>
+    </div>
+    <script>
+        function doLogin() {{
+            const pwd = document.getElementById('pwd').value;
+            fetch('/login', {{
+                method: 'POST', headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify({{password: pwd}})
+            }}).then(r=>r.json()).then(d => {{
+                if(d.success) window.location.reload();
+                else document.getElementById('error_msg').innerText = "❌ Sai mật khẩu!";
+            }});
+        }}
+    </script>
 </body>
 </html>"""
