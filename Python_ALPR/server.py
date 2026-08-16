@@ -29,7 +29,25 @@ def create_app(controller):
             "last_capture_ts": controller.last_capture_ts
         })
         
+    @app.route('/capture_only')
+    def capture_only():
+        """Chi chup anh tu ESP32-CAM, khong nhan dien."""
+        p("[WEB] Nhan lenh Chup Anh don thuan tu ESP32-CAM...")
+        try:
+            frames = controller.camera.capture_frames(num_frames=1, interval=0)
+            if not frames or frames[0][0] is None:
+                return jsonify({"success": False, "error": "Khong chup duoc anh. Kiem tra URL ESP32-CAM!"})
+            os.makedirs("violations", exist_ok=True)
+            cv2.imwrite("violations/latest_capture.jpg", frames[0][0])
+            controller.last_capture_ts = time.time()
+            p("    -> Da chup va luu anh thanh cong!")
+            return jsonify({"success": True})
+        except Exception as e:
+            p(f"    -> [LOI] {e}")
+            return jsonify({"success": False, "error": str(e)})
+
     @app.route('/test_ocr')
+
     def test_ocr():
         if not controller.ai_ready:
             p("[WEB] Nhan nut Test OCR nhung AI chua san sang!")
@@ -126,6 +144,21 @@ def load_ai_bg(controller):
     p("  EASYOCR ĐÃ SẴN SÀNG NHẬN DIỆN 100% OFFLINE!")
     p("==========================================\n")
 
+def start_cloudflare_tunnel(port=5000):
+    """Tu dong khoi dong Cloudflare Tunnel va in URL ra man hinh."""
+    try:
+        from pycloudflared import try_cloudflare
+        p("[CLOUDFLARE] Dang mo Cloudflare Tunnel...")
+        tunnel = try_cloudflare(port=port, verbose=False)
+        p("="*50)
+        p(f"  TRUY CAP TU XA QUA INTERNET:")
+        p(f"  >> {tunnel.tunnel}")
+        p("="*50)
+    except ImportError:
+        p("[CLOUDFLARE] Chua cai pycloudflared. Chay: pip install pycloudflared")
+    except Exception as e:
+        p(f"[CLOUDFLARE] Loi khoi dong tunnel: {e}")
+
 if __name__ == '__main__':
     p("=" * 50)
     p("  KHOI DONG ALPR SYSTEM (NEW ARCHITECTURE)  ")
@@ -141,6 +174,9 @@ if __name__ == '__main__':
     # 3. Load AI (Background)
     threading.Thread(target=load_ai_bg, args=(controller,), daemon=True).start()
     
-    # 4. Chay Web UI
+    # 4. Khoi dong Cloudflare Tunnel (Background) de truy cap tu xa
+    threading.Thread(target=start_cloudflare_tunnel, args=(5000,), daemon=True).start()
+    
+    # 5. Chay Web UI
     app = create_app(controller)
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)

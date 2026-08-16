@@ -4,7 +4,6 @@
 #include <WebServer.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <PubSubClient.h>
 
 // =========================================================
 // CẤU HÌNH WIFI VÀ LAN
@@ -34,16 +33,6 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define UART2_RX 16
 
 // =========================================================
-// CẤU HÌNH THINGSBOARD MQTT
-// =========================================================
-const char* TB_SERVER = "thingsboard.cloud";
-const int TB_PORT = 1883;
-const char* TB_TOKEN = "GkUmbnN2vDPBljtNCKfo";
-
-WiFiClient wifiClient;
-PubSubClient mqttClient(wifiClient);
-
-// =========================================================
 // HÀM HIỂN THỊ LCD
 // =========================================================
 void printLCD(String line1, String line2) {
@@ -54,84 +43,28 @@ void printLCD(String line1, String line2) {
 }
 
 // =========================================================
-// KẾT NỐI WIFI VÀ MQTT
+// KẾT NỐI WIFI
 // =========================================================
 unsigned long lastWifiAttempt = 0;
-unsigned long lastMqttAttempt = 0;
 bool isNetworkOffline = true;
 
-void checkNetwork() {
-  if (WiFi.status() != WL_CONNECTED) {
-    isNetworkOffline = true;
-    if (millis() - lastWifiAttempt > 5000) {
-      lastWifiAttempt = millis();
-      printLCD("!! CANH BAO !!", "MAT MANG WIFI");
-      Serial.println(">> Đang thử kết nối lại WiFi...");
-      WiFi.disconnect();
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    }
-    return; // Nếu mất WiFi thì không check MQTT
-  } else {
+void checkWiFi() {
+  if (WiFi.status() == WL_CONNECTED) {
     if (isNetworkOffline) {
       printLCD("He thong SS", "IP: " + WiFi.localIP().toString());
       isNetworkOffline = false;
     }
+    return;
   }
 
-  if (!mqttClient.connected()) {
-    if (millis() - lastMqttAttempt > 5000) {
-      lastMqttAttempt = millis();
-      Serial.println(">> Đang kết nối tới ThingsBoard MQTT...");
-      if (mqttClient.connect("IOT2_Client", TB_TOKEN, NULL)) {
-        Serial.println(">> Đã kết nối ThingsBoard MQTT!");
-        // Subscribe nhận lệnh RPC từ Dashboard
-        mqttClient.subscribe("v1/devices/me/rpc/request/+");
-      } else {
-        Serial.print(">> Lỗi kết nối MQTT, rc=");
-        Serial.println(mqttClient.state());
-      }
-    }
-  } else {
-    mqttClient.loop(); // Duy trì kết nối MQTT
+  isNetworkOffline = true;
+  if (millis() - lastWifiAttempt > 5000) {
+    lastWifiAttempt = millis();
+    printLCD("!! CANH BAO !!", "MAT MANG WIFI");
+    Serial.println(">> Đang thử kết nối lại WiFi...");
+    WiFi.disconnect();
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
-}
-
-// =========================================================
-// XỬ LÝ LỆNH RPC TỪ THINGSBOARD
-// =========================================================
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  String message = "";
-  for (int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
-  
-  Serial.print(">> Nhan RPC [");
-  Serial.print(topic);
-  Serial.print("]: ");
-  Serial.println(message);
-
-  // Ví dụ JSON: {"method":"OPEN","params":{}}
-  // Lấy request_id từ topic: v1/devices/me/rpc/request/$request_id
-  String topicStr = String(topic);
-  String requestId = topicStr.substring(topicStr.lastIndexOf("/") + 1);
-
-  // Phân tích chuỗi cơ bản để lấy method (Tránh dùng thư viện Json nặng)
-  String method = "";
-  if (message.indexOf("\"method\":\"OPEN\"") > 0) method = "OPEN";
-  else if (message.indexOf("\"method\":\"OPEN_MANUAL\"") > 0) method = "OPEN_MANUAL";
-  else if (message.indexOf("\"method\":\"CLOSE\"") > 0) method = "CLOSE";
-
-  if (method != "") {
-    Serial.println(">> Thuc thi RPC method: " + method);
-    Serial2.println(method);
-    printLCD("Dieu khien TX", method);
-  } else {
-    Serial.println(">> Khong xac dinh method!");
-  }
-
-  // Gửi response phản hồi lại ThingsBoard
-  String responseTopic = "v1/devices/me/rpc/response/" + requestId;
-  mqttClient.publish(responseTopic.c_str(), "{\"status\":\"ok\"}");
 }
 
 // =========================================================
@@ -200,10 +133,6 @@ void setup() {
   }
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  
-  // Cài đặt MQTT
-  mqttClient.setServer(TB_SERVER, TB_PORT);
-  mqttClient.setCallback(mqttCallback);
 
   server.on("/open_gate", HTTP_GET, handleOpenGate);
   server.on("/open_gate_manual", HTTP_GET, handleOpenGateManual);
@@ -216,8 +145,8 @@ void setup() {
 // LOOP
 // =========================================================
 void loop() {
-  checkNetwork();
-  server.handleClient(); // Xử lý API LAN
+  checkWiFi();
+  server.handleClient();
 
   // NHẬN SỰ KIỆN TỪ MẠCH 1 (CẢM BIẾN/SERVO HUB)
   if (Serial2.available()) {

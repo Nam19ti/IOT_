@@ -62,28 +62,27 @@ def get_html(controller):
 </head>
 <body>
     <header>
-        <h1>ALPR SYSTEM - LAN OFFLINE</h1>
-        <p>100% LAN HTTP &nbsp;|&nbsp; EasyOCR Offline</p>
+        <h1>&#128663; TRAM THU PHI VETC</h1>
+        <p>EasyOCR Offline &nbsp;|&nbsp; LAN HTTP &nbsp;|&nbsp; ESP32-CAM</p>
     </header>
 
     <div id="ai_status_bar">AI dang khoi dong... Vui long doi!</div>
 
+    <!-- KET QUA NHAN DIEN GAN NHAT -->
     <div id="violation_panel">
         <div class="card">
             <div class="card-title" style="display:flex; justify-content:space-between;">
-                <span>&#128247; VI PHAM MOI NHAT</span>
+                <span>&#128247; KET QUA NHAN DIEN BIEN SO GAN NHAT</span>
                 <span id="queue_status" style="font-size:0.8rem; color:var(--success);">Trang thai: OK</span>
             </div>
             <div class="vio-grid">
                 <div>
-                    <div id="vio_placeholder">Chua co vi pham nao</div>
-                    <img id="vio_img" src="" alt="Anh vi pham">
+                    <div id="vio_placeholder">Chua co anh nao</div>
+                    <img id="vio_img" src="" alt="Anh bien so">
                 </div>
                 <div class="vio-info">
                     <div class="vio-badge" id="vio_plate">---</div>
-                    <div class="vio-row">Toc do: <span id="vio_speed">---</span></div>
-                    <div class="vio-row">Chieu: <span id="vio_dir">---</span></div>
-                    <div class="vio-row">Engine: <span id="vio_engine">---</span></div>
+                    <div class="vio-row">Trang thai: <span id="vio_status">---</span></div>
                     <div class="vio-row">Thoi gian xu ly: <span id="vio_time">---</span></div>
                     <div class="vio-row" style="color:#64748b; font-size:0.85rem;" id="vio_ts"></div>
                 </div>
@@ -93,13 +92,14 @@ def get_html(controller):
 
     <div class="main-grid">
         <div class="card">
-            <div class="card-title">&#127909; CAMERA TRUC TIEP</div>
+            <div class="card-title">&#127909; CAMERA ESP32-CAM</div>
             <div class="stream-wrap" style="position: relative; background: #000; min-height: 200px; display: flex; align-items: center; justify-content: center;">
-                <img id="latest_cam_view" src="/violations/latest_capture.jpg" style="max-width: 100%; max-height: 400px; object-fit: contain; border-radius: 8px;" alt="Chua co anh chup.">
+                <img id="latest_cam_view" src="/violations/latest_capture.jpg" style="max-width: 100%; max-height: 400px; object-fit: contain; border-radius: 8px;" alt="Chua co anh chup." onerror="this.style.opacity='0.3'">
                 <div class="stream-label" style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">ANH CHUP GAN NHAT</div>
             </div>
             <div class="btn-row" style="margin-top: 1rem;">
-                <button class="btn btn-primary" onclick="testOCR()">Chup & Test OCR Ngay</button>
+                <button class="btn btn-primary" id="btn_capture" onclick="testCapture()">&#128247; Chup Anh Tu ESP-CAM</button>
+                <button class="btn btn-green" id="btn_ocr" onclick="testOCR()">&#128269; Chup &amp; Nhan Dien Ngay</button>
             </div>
             <div id="ocr_result"></div>
         </div>
@@ -146,30 +146,47 @@ def get_html(controller):
 
     function controlGate(actionPath) {{
         const iot2Ip = document.getElementById('iot2_ip').value;
-        if (!iot2Ip) {{
-            alert("Vui lòng nhập IP Mạch 2 trước!");
-            return;
-        }}
-        
+        if (!iot2Ip) {{ alert('Vui long nhap IP Mach 2!'); return; }}
         fetch('http://' + iot2Ip + actionPath)
             .then(r => r.text())
-            .then(txt => alert("Phản hồi từ Mạch 2: " + txt))
-            .catch(err => alert("Lỗi kết nối tới Mạch 2: " + err));
+            .then(txt => alert('Mach 2: ' + txt))
+            .catch(() => alert('Khong ket noi duoc Mach 2!'));
+    }}
+
+    function testCapture() {{
+        const el = document.getElementById('ocr_result');
+        const btn = document.getElementById('btn_capture');
+        el.style.color = '#fbbf24'; el.innerText = 'Dang chup anh tu ESP32-CAM...';
+        btn.disabled = true;
+        fetch('/test_ocr').then(r => r.json()).then(d => {{
+            btn.disabled = false;
+            if (d.success) {{
+                el.style.color = '#10b981';
+                el.innerText = 'Bien so: ' + d.plate + ' (' + d.time + 's)';
+                document.getElementById('latest_cam_view').src = '/violations/latest_capture.jpg?t=' + Date.now();
+            }} else {{
+                el.style.color = '#ef4444';
+                el.innerText = '❌ ' + d.error;
+            }}
+        }}).catch(() => {{ btn.disabled = false; el.style.color='#ef4444'; el.innerText='❌ Loi ket noi server!'; }});
     }}
 
     function testOCR() {{
         const el = document.getElementById('ocr_result');
-        el.style.color = '#fbbf24';
-        el.innerText = 'Dang chup anh va phan tich...';
+        const btn = document.getElementById('btn_ocr');
+        el.style.color = '#fbbf24'; el.innerText = 'Dang chup & nhan dien bien so...';
+        btn.disabled = true;
         fetch('/test_ocr').then(r => r.json()).then(d => {{
+            btn.disabled = false;
             if (d.success) {{
                 el.style.color = '#10b981';
-                el.innerText = 'BIEN SO: ' + d.plate + ' (' + d.engine + ', ' + d.time + 's)';
+                el.innerText = 'Bien so: ' + d.plate + ' (' + d.time + 's)';
+                document.getElementById('latest_cam_view').src = '/violations/latest_capture.jpg?t=' + Date.now();
             }} else {{
                 el.style.color = '#ef4444';
-                el.innerText = 'Loi: ' + d.error;
+                el.innerText = '❌ ' + d.error;
             }}
-        }});
+        }}).catch(() => {{ btn.disabled = false; el.style.color='#ef4444'; el.innerText='❌ Loi ket noi server!'; }});
     }}
 
     let lastVioTs = null;
@@ -199,9 +216,7 @@ def get_html(controller):
                 const v = d.last_violation;
 
                 document.getElementById('vio_plate').innerText = v.plate || '---';
-                document.getElementById('vio_speed').innerText = (v.speed || '---') + ' km/h';
-                document.getElementById('vio_dir').innerText = v.direction || '---';
-                document.getElementById('vio_engine').innerText = v.engine || '---';
+                document.getElementById('vio_status').innerText = v.status || '---';
                 document.getElementById('vio_time').innerText = (v.proc_time || '---') + 's';
                 document.getElementById('vio_ts').innerText = 'Luc: ' + v.ts;
 
