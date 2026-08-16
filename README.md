@@ -1,78 +1,200 @@
-﻿# TRAM THU PHI VETC - ALPR SYSTEM
-**Hệ thống Nhận diện Biển số Tự động (ALPR) cho Trạm Thu Phí với Kiến trúc Zero-Crash và 100% LAN HTTP**
+# BÁO CÁO KHOA HỌC: HỆ THỐNG NHẬN DIỆN BIỂN SỐ TỰ ĐỘNG (ALPR) TÍCH HỢP IOT CHO TRẠM THU PHÍ
+
+> **Tóm tắt (Abstract):** 
+> Dự án này đề xuất và triển khai một giải pháp Trạm Thu Phí Thông minh ứng dụng Internet of Things (IoT) và Trí tuệ Nhân tạo (AI). Hệ thống sử dụng kiến trúc phân tán với 2 vi điều khiển ESP32 đảm nhiệm logic vật lý (Zero-Crash) và giao tiếp mạng cục bộ (LAN HTTP). Mô hình AI Lai (Hybrid AI) kết hợp giữa API Gemini-3.5-Flash (Cloud) và EasyOCR (Edge) đảm bảo khả năng đọc biển số tốc độ cao và tự động dự phòng khi mất mạng. Cơ sở dữ liệu và cảnh báo được đồng bộ hóa toàn diện qua MongoDB, Firebase Realtime Database và Telegram Bot.
 
 ---
 
-## 1. TỔNG QUAN DỰ ÁN
-Dự án **Trạm Thu Phí VETC** là một giải pháp nhận diện biển số xe thông minh và an toàn, được thiết kế đặc biệt với:
-- **Kiến trúc Zero-Crash (Chống sập barie):** Thuật toán bảo vệ kép "Double Check", đảm bảo tuyệt đối cổng không đóng khi vẫn còn xe ở dưới, loại bỏ hoàn toàn hiện tượng nhiễu cảm biến gây tai nạn.
-- **Xử lý Offline 100%:** Sử dụng mô hình nhận diện EasyOCR chạy hoàn toàn nội bộ trên máy chủ Python, không phụ thuộc vào Internet hay Cloud API (Bỏ Gemini).
-- **Mạng LAN HTTP Tốc độ cao:** Loại bỏ hoàn toàn độ trễ của MQTT/ThingsBoard. ESP32 kết nối trực tiếp với Python Server qua các HTTP Request cục bộ, cho độ trễ < 50ms.
-- **Camera Chuyên dụng (IP Webcam (Điện thoại)):** Thay thế Smartphone bằng module Smartphone IP Webcam với cấu hình phân giải cao nhất (UXGA 1600x1200) được tinh chỉnh phần cứng để nhận diện biển số sắc nét.
+## 1. ĐẶT VẤN ĐỀ VÀ MỤC TIÊU (INTRODUCTION & OBJECTIVES)
+
+### 1.1. Đặt vấn đề
+Các hệ thống trạm thu phí truyền thống hoặc các bãi giữ xe bán tự động thường gặp phải các hạn chế:
+- **Lỗi cảm biến vật lý:** Barie hạ xuống khi xe chưa đi qua hết gây va chạm (Crash).
+- **Độ trễ mạng IoT:** Sự phụ thuộc vào các giao thức trung gian như MQTT/ThingsBoard gây ra độ trễ lớn trong thao tác đóng mở cổng.
+- **Tính liền mạch dữ liệu:** Không có cơ chế lưu trữ đệm khi hệ thống mất kết nối mạng Internet.
+
+### 1.2. Mục tiêu giải quyết
+- 🛡️ **Kiến trúc Zero-Crash:** Áp dụng thuật toán bảo vệ kép (Double Check) qua cảm biến siêu âm, ngăn chặn tuyệt đối việc barie hạ sớm.
+- ⚡ **Giao tiếp LAN HTTP (Micro-latency):** Các vi điều khiển giao tiếp trực tiếp với Server thông qua HTTP RESTful API, giảm độ trễ xuống dưới 50ms.
+- 🧠 **Hybrid AI & Offline Queue:** Chạy song song Cloud AI (độ chính xác cao) và Edge AI (dự phòng). Đồng thời tích hợp cơ chế `SyncManager` để lưu file đệm CSV (Offline Queue) tự động đồng bộ khi có mạng.
 
 ---
 
-## 2. KIẾN TRÚC HỆ THỐNG
-Hệ thống gồm 3 module phần cứng và 1 phần mềm trung tâm, liên kết với nhau qua mạng LAN (WiFi `NONNET`):
+## 2. KIẾN TRÚC HỆ THỐNG (SYSTEM ARCHITECTURE)
 
-### 2.1. Module Điều Khiển Vật Lý (Mạch 1 - ESP32 Master)
-*Thư mục: `IOT_`*
-- **Chức năng:** Trực tiếp điều khiển Động cơ Servo (Cổng barie), Còi cảnh báo (Buzzer), Nút bấm khẩn cấp và đọc dữ liệu từ 2 cảm biến siêu âm (HC-SR04).
-- **Logic:** Chịu trách nhiệm hoàn toàn về tính năng **Zero-Crash**. Gửi dữ liệu trạng thái xe sang Mạch 2 qua đường truyền Serial (UART).
+Hệ thống được chia làm 3 phân hệ chính:
 
-### 2.2. Module Giao Tiếp Mạng (Mạch 2 - ESP32 Slave)
-*Thư mục: `IOT_2`*
-- **Chức năng:** Đóng vai trò làm cầu nối (Bridge) giữa phần cứng và máy chủ. Nhận dữ liệu UART từ Mạch 1 và bắn tín hiệu HTTP (`/trigger_capture`) lên Python Server. 
-- **Điều khiển ngược:** Mở cổng Web Server cục bộ (Port 80) tại IP tĩnh `192.168.137.199` để nhận lệnh mở/đóng cổng khẩn cấp từ giao diện Web.
-- **Hiển thị:** Quản lý màn hình LCD I2C hiển thị thông báo.
+### Phân hệ 1: Edge Devices (Thiết bị đầu cuối)
+1. **Mạch 1 (ESP32 Master - `IOT.ino`):** Quản lý cảm biến, thuật toán đo nền (Calibration), điều khiển Động cơ Servo và nút bấm thủ công. Giao tiếp UART với Mạch 2.
+2. **Mạch 2 (ESP32 Slave - `IOT_2.ino`):** Hoạt động như một Gateway. Giao tiếp WiFi cục bộ, quản lý màn hình LCD I2C, nhận lệnh và kích hoạt tiến trình chụp ảnh trên Server.
+3. **Camera (Smartphone IP Webcam):** Đóng vai trò thu nhận luồng Video trực tiếp (MJPEG Stream) qua mạng LAN.
 
-### 2.3. Module Thu Ảnh (IP Webcam (Điện thoại))
-*Thư mục: `ESP32_CAM`*
-- **Chức năng:** Camera độc lập với IP tĩnh `192.168.137.233`. Chạy web server cung cấp luồng ảnh `/photo.jpg` chất lượng cao với cấu hình chống lóa, khử nhiễu tự động.
+### Phân hệ 2: Processing Core (Lõi xử lý Python)
+- **`server.py`:** Flask Web Server điều phối luồng logic, cung cấp giao diện quản trị Web UI và nhận HTTP Trigger từ ESP32.
+- **`ai.py` (HybridOCR):** Chụp khung hình từ luồng Camera, nén ảnh, làm nét và gửi lên Gemini/EasyOCR để trích xuất biển số thông qua Regex.
+- **`sync_manager.py`:** Luồng chạy nền (Background Thread) đồng bộ dữ liệu đa kênh.
 
-### 2.4. Máy Chủ Trí Tuệ Nhân Tạo (Python Server)
-*Thư mục: `Python_ALPR`*
-- **Chức năng:** Trái tim của hệ thống. Chạy ứng dụng Web Flask. Khi nhận lệnh từ Mạch 2, máy chủ sẽ tải ảnh từ IP Webcam (Điện thoại) và chạy AI (EasyOCR) để nhận diện biển số. 
-- **Dashboard:** Cung cấp giao diện trực quan cho nhân viên kiểm soát. 
-- **Cloudflare Tunnel:** Tự động tạo đường hầm để truy cập Dashboard từ bất kỳ đâu trên Internet mà không cần mở Port rườm rà.
+### Phân hệ 3: Cloud Services (Dịch vụ Đám mây)
+- **MongoDB Atlas:** Cơ sở dữ liệu chính, tra cứu ID khách hàng (Telegram ID) dựa trên biển số.
+- **Firebase RTDB:** Lưu trữ lịch sử ra vào theo thời gian thực (Realtime Logging).
+- **Telegram Bot:** Gửi ảnh và thông báo trực tiếp tới thiết bị di động của chủ phương tiện.
+
+```mermaid
+graph TD
+    subgraph Edge Devices
+        S1[Cảm biến 1 & 2] -->|Xung| ESP1[Mạch 1: ESP32 Master]
+        ESP1 -->|UART| ESP2[Mạch 2: ESP32 Gateway]
+        ESP2 -->|LCD I2C| L[Hiển thị LCD]
+        CAM[Smartphone IP Webcam]
+    end
+
+    subgraph Processing Core
+        ESP2 -- HTTP GET --> API[/trigger_capture]
+        API --> PY[Python Server]
+        CAM -- MJPEG Stream --> PY
+        PY -- HTTP GET --> ESP2_API[/open_gate]
+    end
+
+    subgraph Cloud & Sync
+        PY --> SYNC[Sync Manager Queue]
+        SYNC -.->|Truy vấn| MONGO[(MongoDB)]
+        SYNC -.->|Đồng bộ| FB[(Firebase)]
+        SYNC -.->|Cảnh báo| TELE[Telegram Bot]
+    end
+```
+
+### 2.1 Cấu trúc Thư mục Dự án
+```text
+IOT_ThangLong/
+├── IOT_                 # Code Arduino Mạch 1 (ESP32 Master: Vật lý)
+│   └── IOT.ino          # Firmware điều khiển Servo, Còi, Cảm biến
+├── IOT_2                # Code Arduino Mạch 2 (ESP32 Gateway: LAN)
+│   └── IOT_2.ino        # Firmware Web Server cục bộ & LCD I2C
+├── Python_ALPR          # Lõi xử lý Máy chủ
+│   ├── server.py        # Flask Web Server & API (/trigger_capture)
+│   ├── ai.py            # AI Engine (Xử lý Gemini & EasyOCR)
+│   ├── camera.py        # Bắt luồng ảnh MJPEG từ IP Webcam
+│   ├── sync_manager.py  # Background Thread đồng bộ dữ liệu mây
+│   ├── web_html.py      # Giao diện Bảng điều khiển (Web UI)
+│   ├── core.py          # Lưu trạng thái (Controller) và cấu hình
+│   ├── config.json      # Nơi lưu API Key và tùy chọn của người dùng
+│   └── pending_sync.csv # File hàng đợi tạm thời khi mất kết nối mạng
+└── README.md            # Tài liệu Báo cáo hệ thống
+```
 
 ---
 
-## 3. SƠ ĐỒ ĐẤU NỐI (WIRING DIAGRAM)
+## 3. LƯU ĐỒ THUẬT TOÁN (WORKFLOW & FLOWCHART)
 
-### 3.1. Mạch 1 (ESP32 Master)
-- **Cảm biến 1 (Lối vào):** TRIG `GPIO 13` | ECHO `GPIO 12`
-- **Cảm biến 2 (Lối ra):** TRIG `GPIO 5`  | ECHO `GPIO 18`
-- **Servo (Barie):** PWM `GPIO 4`
-- **Còi (Buzzer):** `GPIO 14`
-- **Nút bấm thủ công:** `GPIO 26` (Nối với GND)
-- **UART (Sang Mạch 2):** TX `GPIO 17` | RX `GPIO 16` (Nhớ nối chung GND)
+### 3.1. Luồng vận hành chính (Xe đi vào)
+1. **Phát hiện:** Cảm biến 1 (Lối vào) phát hiện khoảng cách sụt giảm so với mẫu nền.
+2. **Kích hoạt:** Mạch 1 truyền tín hiệu `CAR_IN` qua UART sang Mạch 2.
+3. **Giao tiếp:** Mạch 2 gọi HTTP GET `/trigger_capture` tới máy tính (Server).
+4. **Xử lý AI (Auto-Retry):** Server chụp ảnh. Nếu thất bại hoặc ảnh mờ, Server tự động chờ 1s và chụp bù lần 2. Biển số được trích xuất.
+5. **Đồng bộ:** Biển số được đưa vào Queue. Background Thread tra cứu Mongo lấy `chat_id`, sau đó bắn ảnh qua Telegram và lưu log lên Firebase.
+6. **Mở cổng:** Server phản hồi kết quả JSON. Mạch 2 đọc JSON, hiển thị LCD và phát lệnh `OPEN` cho Mạch 1 mở Servo.
+7. **Đóng cổng an toàn:** Khi xe vượt qua Cảm biến 2, mạch 1 chờ 3 giây và đóng cổng.
 
-### 3.2. Mạch 2 (ESP32 Slave)
-- **UART (Từ Mạch 1):** TX `GPIO 17` | RX `GPIO 16`
-- **Màn hình LCD I2C:** SDA `GPIO 21` | SCL `GPIO 22`
+### 3.2. Lưu đồ xử lý Zero-Crash
+```mermaid
+stateDiagram-v2
+    [*] --> GATE_CLOSED
+    GATE_CLOSED --> GATE_OPEN : Nhận lệnh OPEN
+    GATE_OPEN --> CAR_UNDER_GATE : Cảm biến 2 kích hoạt (trigger2)
+    CAR_UNDER_GATE --> CAR_LEFT_GATE : Cảm biến 2 ngắt
+    
+    state CAR_LEFT_GATE {
+        [*] --> Đếm_ngược_3s
+        Đếm_ngược_3s --> Kích_hoạt_lại : Cảm biến 2 bị chắn lại
+        Kích_hoạt_lại --> [*] : Reset bộ đếm
+    }
+    
+    CAR_LEFT_GATE --> GATE_CLOSED : Hết 3s an toàn
+```
 
 ---
 
-## 4. WORKFLOW VẬN HÀNH
+## 4. SƠ ĐỒ ĐẤU NỐI PHẦN CỨNG (WIRING DIAGRAM)
 
-1. **Khởi động:** Python Server tải model AI (EasyOCR) vào RAM (mất ~30s-1p). Mạch 1 chạy Calibration đo khoảng cách nền (Tường đối diện).
-2. **Xe tiến vào:** Cảm biến 1 phát hiện có xe. Mạch 1 tự động mở cổng (Servo quay), kêu tít tít. 
-3. **Chụp ảnh:** Mạch 1 truyền UART báo Mạch 2. Mạch 2 bắn HTTP Get tới Python Server (`/trigger_capture`). Python Server gọi IP của IP Webcam (Điện thoại) tải ảnh.
-4. **Xử lý AI:** Python Server đưa ảnh vào EasyOCR, trả về chuỗi Biển số và cập nhật Dashboard.
-5. **Xe đi qua cổng:** Xe chạm Cảm biến 2. Mạch 1 ghi nhận trạng thái `carAtGate = true`.
-6. **Đóng cổng an toàn:** Khi xe đi khỏi Cảm biến 2, mạch 1 chờ thêm 3 giây, kiểm tra lại Cảm biến 2 một lần nữa (Double Check) để chắc chắn vùng không gian đã trống, sau đó mới hạ barie.
+Yêu cầu cấp nguồn 5V ổn định cho cả hai mạch. Khuyến nghị nối chung Ground (GND) giữa Mạch 1 và Mạch 2 để giao tiếp UART ổn định.
+
+### 4.1. Mạch 1 (ESP32 Master - Vật lý)
+| Linh kiện | Chân trên Linh kiện | Chân trên ESP32 |
+| :--- | :--- | :--- |
+| **Cảm biến 1 (Lối vào)** | TRIG | `GPIO 13` |
+| | ECHO | `GPIO 12` |
+| **Cảm biến 2 (Lối ra)** | TRIG | `GPIO 5` |
+| | ECHO | `GPIO 18` |
+| **Servo (Cổng Barie)** | PWM (Tín hiệu) | `GPIO 4` |
+| **Buzzer (Còi)** | Tín hiệu | `GPIO 14` |
+| **Nút bấm thủ công** | Một đầu | `GPIO 26` |
+| | Đầu kia | `GND` |
+| **Giao tiếp Mạch 2** | TX (Gửi) | `GPIO 17` |
+| | RX (Nhận) | `GPIO 16` |
+
+### 4.2. Mạch 2 (ESP32 Slave - Mạng & Hiển thị)
+| Linh kiện | Chân trên Linh kiện | Chân trên ESP32 |
+| :--- | :--- | :--- |
+| **Giao tiếp Mạch 1** | TX (Gửi) | `GPIO 17` (Nối RX Mạch 1)|
+| | RX (Nhận) | `GPIO 16` (Nối TX Mạch 1)|
+| **Màn hình LCD I2C** | SDA | `GPIO 21` |
+| | SCL | `GPIO 22` |
+| | VCC | `5V` (Hoặc 3V3 tùy module) |
 
 ---
 
-## 5. HƯỚNG DẪN KHỞI ĐỘNG (QUICK START)
-1. Bật mạng WiFi trên Laptop/Router với tên: `NONNET` - Pass: `abcd1234`. Đặt IP máy tính tĩnh thành `192.168.137.1`.
-2. Cấp nguồn cho cả 3 vi điều khiển (Mạch 1, Mạch 2, IP Webcam (Điện thoại)).
-3. Mở Terminal vào thư mục `Python_ALPR`:
-   ```bash
-   venv\Scripts\activate
-   python server.py
-   ```
-4. Giao diện quản lý nội bộ sẽ mở tại `http://localhost:5000`. Một đường link Cloudflare công khai (Vd: `https://abcd-xyz.trycloudflare.com`) cũng sẽ được in ra console để xem từ xa.
+## 5. CÀI ĐẶT VÀ TRIỂN KHAI (INSTALLATION)
 
+### Bước 1: Mạng và Phần cứng
+1. Phát WiFi từ Router hoặc Laptop với cấu hình bắt buộc:
+   - Tên WiFi (SSID): `NONNET`
+   - Mật khẩu: `abcd1234`
+2. Cài đặt IP Tĩnh cho Laptop (Máy chủ) là: `192.168.137.1`.
+3. Bật ứng dụng **IP Webcam** trên điện thoại Android, nhấn "Start server". (Ví dụ IP thu được là `http://192.168.137.233:8080`).
 
+### Bước 2: Nạp Code ESP32
+1. Mở Arduino IDE.
+2. Cài đặt các thư viện cần thiết: `LiquidCrystal_I2C`, `ESP32Servo`.
+3. Mở thư mục `IOT_`, nạp file `IOT.ino` vào Mạch 1.
+4. Mở thư mục `IOT_2`, nạp file `IOT_2.ino` vào Mạch 2.
+
+### Bước 3: Cài đặt Python Server
+Yêu cầu: Môi trường Python 3.9+
+```bash
+# Di chuyển vào thư mục Server
+cd Python_ALPR
+
+# Tạo môi trường ảo (Khuyến nghị)
+python -m venv venv
+venv\Scripts\activate
+
+# Cài đặt thư viện
+pip install flask opencv-python easyocr google-generativeai requests pymongo
+```
+
+### Bước 4: Khởi động hệ thống
+```bash
+# Khởi chạy lõi xử lý
+python server.py
+```
+- Truy cập vào **Bảng điều khiển Web (Dashboard)** tại địa chỉ: `http://localhost:5000` (hoặc `http://192.168.137.1:5000`).
+
+---
+
+## 6. HƯỚNG DẪN SỬ DỤNG (USAGE GUIDE)
+
+### Cấu hình Hệ thống trên Web
+Giao diện điều khiển cung cấp một bảng cấu hình toàn diện. Lần đầu sử dụng, bạn cần nhập:
+1. **URL Camera:** Link IP Webcam từ điện thoại (vd: `http://192.168.137.233:8080/video`).
+2. **Mô hình AI:** Chọn `Hybrid (Gemini + EasyOCR)` (Yêu cầu điền Gemini API Key) hoặc `Offline (EasyOCR)`.
+3. **Dịch vụ Đám mây:** 
+   - Điền Telegram Bot Token.
+   - Điền Chuỗi kết nối MongoDB (URI).
+   - Điền Firebase URL (Dạng `https://xyz.firebaseio.com/`).
+   *(Hệ thống hỗ trợ gạt Tắt/Bật từng dịch vụ độc lập).*
+
+### Vận hành
+- **Tự động:** Đưa phương tiện đi ngang qua cảm biến 1. Hệ thống sẽ tự động chụp ảnh, phân tích, đẩy dữ liệu lên đám mây, mở cổng và tự đóng cổng.
+- **Thủ công:** Trên giao diện Web có nút **"Chụp & Nhận Diện"** để test riêng hệ thống AI, hoặc các nút **"Mở Cổng" / "Đóng Cổng"** để can thiệp vật lý trực tiếp xuống ESP32.
+
+> **Lưu ý Căn chỉnh:** Lần đầu cắm điện, mạch Master sẽ nháy đèn và chạy "Calibration" mất khoảng 2 giây để đo đạc không gian xung quanh làm mẫu nền. Không được đứng che cảm biến trong lúc này. Màn hình LCD sẽ báo `He thong SS` khi quá trình hoàn tất.
