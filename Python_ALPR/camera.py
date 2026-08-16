@@ -24,7 +24,7 @@ class CameraClient:
         if not self.url:
             return None
         try:
-            req = urllib.request.urlopen(self.url, timeout=3.0)
+            req = urllib.request.urlopen(self.url, timeout=10.0)
             arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
             img = cv2.imdecode(arr, -1)
             # CHECK MANG NUMPY AN TOAN:

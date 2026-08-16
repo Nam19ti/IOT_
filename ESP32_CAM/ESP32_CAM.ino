@@ -85,11 +85,11 @@ void setup() {
   // ==================================================
   // CAU HINH CHAT LUONG ANH CAO NHAT CO THE
   // UXGA = 1600x1200 - Do phan giai lon nhat cua OV2640
-  // jpeg_quality: 0-63, cang THAP cang NET (4 = cuc cao)
+  // jpeg_quality: 0-63, cang THAP cang NET. Muc 10 la can bang hoan hao cho OCR (~90KB)
   // fb_count = 2: Bo dem kep, tranh bi mo do lag bo dem
   // ==================================================
   config.frame_size   = FRAMESIZE_UXGA;
-  config.jpeg_quality = 4;
+  config.jpeg_quality = 10;
   config.fb_count     = 2;
 
   esp_err_t err = esp_camera_init(&config);
