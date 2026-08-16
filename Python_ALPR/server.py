@@ -64,13 +64,13 @@ def create_app(controller):
         Mục đích: Chỉ thực hiện việc kết nối camera để chụp 1 bức ảnh, lưu lại, KHÔNG chạy nhận diện.
         Giải thích: Dành cho chức năng thử nghiệm hoặc các quy trình chia nhỏ (chụp ảnh xong, sau đó mới gọi xử lý ảnh).
         """
-        p("[WEB] Nhan lenh Chup Anh don thuan tu ESP32-CAM...")
+        p("[WEB] Nhan lenh Chup Anh don thuan tu IP Webcam...")
         try:
             # Lấy 1 frame (khung hình) từ camera, không có khoảng trễ
             frames = controller.camera.capture_frames(num_frames=1, interval=0)
             # Kiểm tra tính hợp lệ của ảnh chụp
             if not frames or frames[0][0] is None:
-                return jsonify({"success": False, "error": "Khong chup duoc anh. Kiem tra URL ESP32-CAM!"})
+                return jsonify({"success": False, "error": "Khong chup duoc anh. Kiem tra URL IP Webcam!"})
             
             # Tạo thư mục captures nếu chưa có
             os.makedirs("captures", exist_ok=True)
@@ -206,7 +206,7 @@ def create_app(controller):
             return jsonify({"success": False, "error": "AI chua load xong!"})
             
         start = time.time()
-        p("\n[HETHONG] IOT_2 bao co xe vao! Dang chup anh tu ESP32-CAM...")
+        p("\n[HETHONG] IOT_2 bao co xe vao! Dang chup anh tu IP Webcam...")
         
         # Tạm nghỉ 0.2s để đảm bảo xe chạy hẳn vào chính giữa khung hình camera
         time.sleep(0.2)

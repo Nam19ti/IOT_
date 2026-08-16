@@ -100,14 +100,29 @@ class HybridOCR:
         return bool(VN_PLATE_RE.match(text))
 
     def _post_process(self, raw):
-        """Quy trình hậu xử lý chuẩn hóa kết quả thô từ AI"""
+        """
+        Quy trình hậu xử lý thông minh (Sliding Window): 
+        Lọc biển số khỏi các chữ rác trong nền ảnh (VD: AI đọc là 'HONDA29A12345').
+        """
         raw = re.sub(r'[^A-Z0-9]', '', raw.upper())
-        if self._validate(raw): return raw # Nếu đã chuẩn, trả về luôn
         
-        # Nếu chưa chuẩn, thử dùng hàm Heuristic để "cứu" kết quả
-        fixed = self._fix_ocr(raw)
-        if self._validate(fixed): return fixed
-        return None
+        # 1. Thử tìm ngay một chuỗi khớp hoàn hảo nằm bên trong (Regex Search)
+        match = re.search(r'(\d{2,3}[A-Z]{1,2}\d{4,5})', raw)
+        if match:
+            return match.group(1)
+            
+        # 2. Nếu không tìm thấy (có thể do lỗi O->0, I->1...), ta trượt cửa sổ cắt từng đoạn
+        # dài 7, 8, 9 ký tự và đưa vào hàm _fix_ocr để sửa lỗi.
+        for length in [9, 8, 7]: # Ưu tiên biển số dài (9 ký tự) trước
+            if len(raw) < length: continue
+            for i in range(len(raw) - length + 1):
+                substring = raw[i:i+length]
+                fixed = self._fix_ocr(substring)
+                if self._validate(fixed):
+                    return fixed
+                    
+        # Trả về kết quả thô nếu không có cụm nào sửa thành công (Chấp nhận trả linh tinh để người dùng tự xem)
+        return raw
 
     def _get_sharpness(self, img):
         """Thuật toán đánh giá độ nét của ảnh dùng phương sai Laplacian"""
@@ -116,6 +131,45 @@ class HybridOCR:
             return cv2.Laplacian(gray, cv2.CV_64F).var()
         except:
             return 0.0
+
+    def _crop_plate(self, img):
+        """
+        Dùng Haar Cascade để khoanh vùng và cắt riêng phần biển số ra khỏi ảnh nền.
+        Giúp AI không bị phân tâm bởi các chữ rác xung quanh (như logo hãng xe).
+        """
+        try:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            import os
+            cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_russian_plate_number.xml')
+            if not os.path.exists(cascade_path):
+                return img
+                
+            plate_cascade = cv2.CascadeClassifier(cascade_path)
+            # Quét tìm biển số trong ảnh
+            plates = plate_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+            
+            if len(plates) > 0:
+                # Lấy biển có diện tích lớn nhất (gần camera nhất)
+                plates = sorted(plates, key=lambda x: x[2]*x[3], reverse=True)
+                x, y, w, h = plates[0]
+                
+                # Nới rộng vùng cắt (Padding) ra 15% để không bị lẹm chữ
+                pad_x = int(w * 0.15)
+                pad_y = int(h * 0.15)
+                
+                img_h, img_w = img.shape[:2]
+                x1 = max(0, x - pad_x)
+                y1 = max(0, y - pad_y)
+                x2 = min(img_w, x + w + pad_x)
+                y2 = min(img_h, y + h + pad_y)
+                
+                cropped = img[y1:y2, x1:x2]
+                p("      -> [AI] Đã khoanh vùng và cắt riêng biển số thành công!")
+                return cropped
+        except Exception as e:
+            p(f"      -> [CROP LỖI] {e}")
+            
+        return img # Trả về ảnh gốc nếu không phát hiện được biển số
 
     def _run_easyocr(self, img):
         """Nhận diện biển số Offline bằng mô hình AI EasyOCR"""
@@ -208,37 +262,40 @@ class HybridOCR:
         for score, frame, orig_idx in scored_frames:
             p(f"      -> Đang phân tích ảnh gốc số {orig_idx} (Độ nét: {score:.1f})...")
             
+            # Cắt vùng biển số
+            cropped_frame = self._crop_plate(frame)
+            
             res = None
             engine_used = "EasyOCR"
             
             # CHẾ ĐỘ HYBRID: Chạy Gemini trước, nếu rớt mạng thì lập tức Fallback về EasyOCR
             if self.mode == "gemini" and self.api_key:
                 p("      -> [AI] Đang gọi Google Gemini API (Cloud)...")
-                res = self._run_gemini(frame)
+                res = self._run_gemini(cropped_frame)
                 
                 # Nếu Gemini trả về lỗi mạng hoặc lỗi API, kích hoạt cơ chế Fallback
                 if res and res not in ("Mat Mang", "Thieu API Key", "Khong Co Gemini", "Loi Phan Mem", "Khong Thay Bien"):
                     engine_used = "Gemini 1.5"
                 else:
                     p("      -> [AI] Gemini thất bại (Mất mạng hoặc Lỗi). TỰ ĐỘNG FALLBACK sang EasyOCR Offline!")
-                    res = self._run_easyocr(frame)
+                    res = self._run_easyocr(cropped_frame)
                     engine_used = "EasyOCR (Fallback)"
             else:
                 # Chế độ thuần Offline
-                res = self._run_easyocr(frame)
+                res = self._run_easyocr(cropped_frame)
                 engine_used = "EasyOCR"
             
             # Đánh giá kết quả
             if res and res not in ("Khong Thay Bien", "Thieu Thiet Lap", "Loi Phan Mem", "Mat Mang", "Thieu API Key"):
                 if self._validate(res):
                     p(f"      -> [OK] Tìm thấy biển số chuẩn '{res}' bằng {engine_used}!")
-                    return res, engine_used, frame
+                    return res, engine_used, cropped_frame
                 else:
                     p(f"      -> [WARN] Nhận diện ra '{res}' nhưng sai định dạng Biển VN.")
                     # Lưu tạm kết quả sai định dạng vào best_overall để dùng nếu các ảnh khác đều xịt
                     if not best_overall:
                         best_overall = res
-                        best_frame = frame
+                        best_frame = cropped_frame
             else:
                 p(f"      -> [FAIL] Không thể đọc được biển số trên ảnh này.")
                 

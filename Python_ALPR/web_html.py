@@ -106,7 +106,7 @@ def get_html(controller):
 <body>
     <header>
         <h1>&#128663; TRAM THU PHI VETC</h1>
-        <p>EasyOCR Offline &nbsp;|&nbsp; ESP32-CAM &nbsp;|&nbsp; LAN HTTP</p>
+        <p>EasyOCR Offline &nbsp;|&nbsp; IP Webcam &nbsp;|&nbsp; LAN HTTP</p>
     </header>
 
     <div id="ai_status_bar">AI dang khoi dong... Vui long doi!</div>
@@ -286,7 +286,7 @@ def get_html(controller):
         const el  = document.getElementById('ocr_result');
         const btn = document.getElementById('btn_capture');
         el.style.color = '#fbbf24';
-        el.innerText = '📷 Dang chup anh tu ESP32-CAM...';
+        el.innerText = '📷 Dang chup anh...';
         btn.disabled = true;
         fetch('/capture_only').then(r=>r.json()).then(d=>{{
             btn.disabled = false;
