@@ -19,7 +19,12 @@ class Config:
         self.filename = filename
         self.data = {
             "ip_camera_url": "http://192.168.137.233/photo.jpg",
-            "iot2_ip": "192.168.137.199"
+            "iot2_ip": "192.168.137.199",
+            "gemini_api_key": "",
+            "ai_mode": "gemini", # 'gemini' hoac 'easyocr'
+            "telegram_token": "8890661056:AAGlJpg1sjUXsZaz-mZu4U_E1Vmd9t8LEok",
+            "mongo_uri": "mongodb+srv://talkwitht21_db_user:1234@cluster0.0dirlxq.mongodb.net/?appName=Cluster0",
+            "firebase_url": "https://test-a2b8e-default-rtdb.firebaseio.com/"
         }
         self.load()
 
@@ -60,5 +65,6 @@ class SystemController:
         
         # Modules
         self.camera = None
-        self.cloud = None
+        # Dong bo Cloud & Telegram
+        self.sync_manager = None
 

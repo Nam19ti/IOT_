@@ -58,9 +58,14 @@ def get_html(controller):
                      background: #000; border: 1px solid var(--border); min-height: 200px;
                      display: flex; align-items: center; justify-content: center; }}
         .cam-wrap img {{ width: 100%; max-height: 360px; object-fit: contain; display: block; }}
-        .cam-badge {{ position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7);
-                      padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 700;
-                      color: var(--primary); border: 1px solid var(--primary); }}
+        .cam-badge {{ position: absolute; bottom: 10px; right: 10px; background: rgba(0,0,0,0.6);
+                       color: #38bdf8; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; }}
+        
+        /* === WIDGET CAU HINH === */
+        .config-widget {{ display: none; margin-top: 1rem; padding: 1rem; background: #1e293b; border-radius: 8px; border: 1px solid #334155; }}
+        .config-widget.active {{ display: block; }}
+        .gear-btn {{ cursor: pointer; float: right; font-size: 1.2rem; color: #94a3b8; transition: 0.3s; }}
+        .gear-btn:hover {{ color: #38bdf8; transform: rotate(90deg); }}
 
         /* === FORM === */
         .form-row {{ display: flex; align-items: center; gap: 10px; margin-bottom: 0.9rem; }}
@@ -128,21 +133,76 @@ def get_html(controller):
             </div>
         </div>
 
-        <!-- CAMERA ESP32-CAM -->
+        <!-- CAMERA IP WEBCAM -->
         <div class="cam-center-grid">
             <div class="card">
-                <div class="card-title">&#127909; Camera ESP32-CAM</div>
+                <div class="card-title">
+                    &#128241; Camera IP Webcam (Dien Thoai)
+                    <span class="gear-btn" onclick="toggleConfig()" title="Cau hinh URL">&#9881;</span>
+                </div>
                 <div class="cam-wrap">
-                    <img id="cam_view" src="/violations/latest_capture.jpg"
+                    <img id="cam_view" src="/captures/latest_capture.jpg"
                          alt="Chua co anh" onerror="this.style.opacity='0.2'">
                     <div class="cam-badge">ANH GAN NHAT</div>
                 </div>
-                <div class="btn-row">
+                
+                <!-- WIDGET CAU HINH (An mac dinh) -->
+                <div id="config_panel" class="config-widget">
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div>
+                            <label style="color: #94a3b8; font-size: 0.9rem;">Chế độ AI (Nhận diện):</label>
+                            <select id="ai_mode" style="width:100%; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; margin-top: 5px;">
+                                <option value="gemini" { 'selected' if controller.config.get('ai_mode', 'gemini') == 'gemini' else '' }>Google Gemini 3.5 Flash (Thế hệ mới nhất, Cần Mạng)</option>
+                                <option value="easyocr" { 'selected' if controller.config.get('ai_mode', '') == 'easyocr' else '' }>EasyOCR (Nhanh vừa, Kém chuẩn hơn, 100% Offline)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="color: #94a3b8; font-size: 0.9rem;">Google Gemini API Key:</label>
+                            <input type="password" id="gemini_api_key" style="width:100%; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; box-sizing:border-box; margin-top: 5px;"
+                                   value="{controller.config.get('gemini_api_key', '')}" placeholder="AIzaSy...">
+                        </div>
+                        <div>
+                            <label style="color: #94a3b8; font-size: 0.9rem;">URL IP Webcam (Điện thoại):</label>
+                            <input type="text" id="cam_url" style="width:100%; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; box-sizing:border-box; margin-top: 5px;"
+                                   value="{controller.config.get('ip_camera_url', 'http://192.168.1.xxx:8080/shot.jpg')}" placeholder="Vd: http://192.168.1.100:8080">
+                        </div>
+                        <div>
+                            <label style="color: #94a3b8; font-size: 0.9rem;">Telegram Bot Token:</label>
+                            <input type="password" id="telegram_token" style="width:100%; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; box-sizing:border-box; margin-top: 5px;"
+                                   value="{controller.config.get('telegram_token', '')}" placeholder="Bot Token từ BotFather...">
+                        </div>
+                        <div>
+                            <label style="color: #94a3b8; font-size: 0.9rem;">MongoDB URI:</label>
+                            <input type="password" id="mongo_uri" style="width:100%; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; box-sizing:border-box; margin-top: 5px;"
+                                   value="{controller.config.get('mongo_uri', '')}" placeholder="mongodb+srv://...">
+                        </div>
+                        <div>
+                            <label style="color: #94a3b8; font-size: 0.9rem;">Firebase RTDB URL:</label>
+                            <input type="password" id="firebase_url" style="width:100%; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; box-sizing:border-box; margin-top: 5px;"
+                                   value="{controller.config.get('firebase_url', '')}" placeholder="https://your-project.firebaseio.com/">
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                            <input type="checkbox" id="enable_firebase" { 'checked' if controller.config.get('enable_firebase', True) else '' }>
+                            <label for="enable_firebase" style="color: white; font-size: 0.9rem;">Bật đẩy dữ liệu lên Firebase</label>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                            <input type="checkbox" id="enable_telegram" { 'checked' if controller.config.get('enable_telegram', True) else '' }>
+                            <label for="enable_telegram" style="color: white; font-size: 0.9rem;">Bật quét MongoDB & báo Telegram</label>
+                        </div>
+                        <button class="btn btn-green" style="width: 100%; margin-top: 10px;" onclick="saveSettings()">Lưu Cài Đặt</button>
+                        <div id="save_msg" style="text-align:center; color:#10b981; font-weight:bold;"></div>
+                    </div>
+                </div>
+
+                <div class="btn-row" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
                     <button class="btn btn-blue" id="btn_capture" onclick="doCapture()">
                         &#128247; Chup Anh
                     </button>
                     <button class="btn btn-green" id="btn_ocr" onclick="doOCR()">
                         &#128269; Chup &amp; Nhan Dien
+                    </button>
+                    <button class="btn btn-red" id="btn_abort" onclick="abortOCR()" style="display:none;">
+                        &#10060; Huy Nhận Diện
                     </button>
                 </div>
                 <div id="ocr_result"></div>
@@ -175,9 +235,43 @@ def get_html(controller):
     }}
 
     // ===================== SETTINGS =====================
-    // IP tinh co dinh - khong can chinh trong web
-    const IOT2_IP = '192.168.137.199';
+    const IOT2_IP = '192.168.137.199'; // IP tinh Mạch 2
 
+    function toggleConfig() {{
+        const panel = document.getElementById('config_panel');
+        panel.classList.toggle('active');
+    }}
+
+    function saveSettings() {{
+        const url = document.getElementById('cam_url').value;
+        const api_key = document.getElementById('gemini_api_key').value;
+        const ai_mode = document.getElementById('ai_mode').value;
+        const tele = document.getElementById('telegram_token').value;
+        const mongo = document.getElementById('mongo_uri').value;
+        const fire = document.getElementById('firebase_url').value;
+        const en_fire = document.getElementById('enable_firebase').checked;
+        const en_tele = document.getElementById('enable_telegram').checked;
+        fetch('/set_settings', {{
+            method:'POST', headers:{{'Content-Type':'application/json'}},
+            body: JSON.stringify({{ 
+                "url": url,
+                "gemini_api_key": api_key,
+                "ai_mode": ai_mode,
+                "telegram_token": tele,
+                "mongo_uri": mongo,
+                "firebase_url": fire,
+                "enable_firebase": en_fire,
+                "enable_telegram": en_tele
+            }})
+        }}).then(r=>r.json()).then(d=>{{
+            document.getElementById('save_msg').innerText = d.success ? '✅ Đã lưu Cài đặt!' : '❌ Lỗi lưu!';
+            setTimeout(()=>document.getElementById('save_msg').innerText='', 3000);
+        }}).catch(e => {{
+            console.error(e);
+            document.getElementById('save_msg').innerText = '❌ Lỗi Mạng/Server!';
+            setTimeout(()=>document.getElementById('save_msg').innerText='', 3000);
+        }});
+    }}
     // ===================== GATE CONTROL =====================
     function gate(path) {{
         toast('Dang gui lenh...');
@@ -199,7 +293,8 @@ def get_html(controller):
             if (d.success) {{
                 el.style.color = '#10b981';
                 el.innerText = '✅ Chup anh thanh cong!';
-                document.getElementById('cam_view').src = '/violations/latest_capture.jpg?t=' + Date.now();
+                document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now();
+                document.getElementById('cam_view').style.opacity = '1';
             }} else {{
                 el.style.color = '#ef4444';
                 el.innerText = '❌ ' + d.error;
@@ -208,23 +303,68 @@ def get_html(controller):
     }}
 
     // ===================== OCR =====================
+    let ocrController = null;
+
+    function abortOCR() {{
+        if (ocrController) {{
+            ocrController.abort();
+            ocrController = null;
+        }}
+        const el  = document.getElementById('ocr_result');
+        el.innerText = '❌ Đã hủy nhận diện!';
+        el.style.color = '#ef4444'; 
+        
+        document.getElementById('btn_ocr').disabled = false;
+        document.getElementById('btn_ocr').style.display = 'inline-block';
+        document.getElementById('btn_abort').style.display = 'none';
+        toast('Đã hủy tiến trình AI');
+    }}
+
     function doOCR() {{
         const el  = document.getElementById('ocr_result');
         const btn = document.getElementById('btn_ocr');
         el.style.color = '#fbbf24';
-        el.innerText = '🔍 Dang chup & nhan dien bien so...';
+        el.innerText = '🔍 Dang chup anh...';
         btn.disabled = true;
-        fetch('/test_ocr').then(r=>r.json()).then(d=>{{
-            btn.disabled = false;
+        
+        fetch('/capture_only').then(r=>r.json()).then(d=>{{
             if (d.success) {{
-                el.style.color = '#10b981';
-                el.innerText = '✅ Bien so: ' + d.plate + '  (' + d.time + 's)';
-                document.getElementById('cam_view').src = '/violations/latest_capture.jpg?t=' + Date.now();
+                document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now();
+                document.getElementById('cam_view').style.opacity = '1';
+                
+                el.innerText = '⏳ Da chup. Dang nhan dien bien so... (Vui long doi)';
+                document.getElementById('btn_ocr').style.display = 'none';
+                document.getElementById('btn_abort').style.display = 'inline-block';
+                
+                ocrController = new AbortController();
+                fetch('/process_latest', {{ signal: ocrController.signal }}).then(r2=>r2.json()).then(d2=>{{
+                    btn.disabled = false;
+                    document.getElementById('btn_ocr').style.display = 'inline-block';
+                    document.getElementById('btn_abort').style.display = 'none';
+                    if (d2.success) {{
+                        el.style.color = '#10b981';
+                        el.innerText = '✅ Bien so: ' + d2.plate + '  (' + d2.time + 's)';
+                    }} else {{
+                        el.style.color = '#ef4444';
+                        el.innerText = '❌ ' + d2.error;
+                    }}
+                }}).catch(e=>{{ 
+                    btn.disabled=false; 
+                    document.getElementById('btn_ocr').style.display = 'inline-block';
+                    document.getElementById('btn_abort').style.display = 'none';
+                    if(e.name === 'AbortError') {{
+                        console.log('Fetch aborted');
+                    }} else {{
+                        el.style.color='#ef4444'; el.innerText='❌ Loi ket noi nhan dien!'; 
+                    }}
+                }});
+                
             }} else {{
+                btn.disabled = false;
                 el.style.color = '#ef4444';
                 el.innerText = '❌ ' + d.error;
             }}
-        }}).catch(()=>{{ btn.disabled=false; el.style.color='#ef4444'; el.innerText='❌ Loi ket noi server!'; }});
+        }}).catch(()=>{{ btn.disabled=false; el.style.color='#ef4444'; el.innerText='❌ Loi ket noi chup anh!'; }});
     }}
 
     // ===================== LIVE UPDATE =====================
@@ -246,7 +386,8 @@ def get_html(controller):
             // Anh moi nhat
             if (d.last_capture_ts && d.last_capture_ts !== lastCaptureTs) {{
                 lastCaptureTs = d.last_capture_ts;
-                document.getElementById('cam_view').src = '/violations/latest_capture.jpg?t=' + Date.now();
+                document.getElementById('cam_view').src = '/captures/latest_capture.jpg?t=' + Date.now();
+                document.getElementById('cam_view').style.opacity = '1';
             }}
 
             // Ket qua nhan dien
@@ -261,7 +402,7 @@ def get_html(controller):
                 const img = document.getElementById('result_img');
                 const ph  = document.getElementById('result_placeholder');
                 if (v.image && v.image !== 'no_image.jpg') {{
-                    img.src = '/violations/' + v.image + '?t=' + Date.now();
+                    img.src = '/captures/' + v.image + '?t=' + Date.now();
                     img.style.display = 'block'; ph.style.display = 'none';
                 }} else {{
                     img.style.display = 'none'; ph.style.display = 'flex';

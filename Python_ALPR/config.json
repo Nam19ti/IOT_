@@ -1,8 +1,12 @@
 {
-    "ip_camera_url": "http://192.168.137.233/photo.jpg",
+    "ip_camera_url": "http://192.168.137.215:8080/photo.jpg",
     "iot2_ip": "192.168.137.199",
-    "gemini_api_key": "",
-    "firebase_url": "",
-    "tb_token": "GkUmbnN2vDPBljtNCKfo",
-    "ai_mode": "easyocr"
+    "gemini_api_key": "AIzaSyD78inSE9aOkpVbm-ZUUnFLQJa2x3yB9hU",
+    "ai_mode": "easyocr",
+    "telegram_token": "8890661056:AAGlJpg1sjUXsZaz-mZu4U_E1Vmd9t8LEok",
+    "mongo_uri": "mongodb+srv://talkwitht21_db_user:1234@cluster0.0dirlxq.mongodb.net/?appName=Cluster0",
+    "firebase_url": "https://test-f716d-default-rtdb.asia-southeast1.firebasedatabase.app/",
+    "tb_token": "",
+    "enable_firebase": true,
+    "enable_telegram": true
 }

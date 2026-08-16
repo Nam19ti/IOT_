@@ -163,7 +163,24 @@ void loop() {
         http.begin(url);
         int httpCode = http.GET();
         if (httpCode > 0) {
-          Serial.printf(">> Đã gửi lệnh chụp ảnh tới Python (Code: %d)\n", httpCode);
+          String payload = http.getString();
+          Serial.printf(">> Python (Code: %d): %s\n", httpCode, payload.c_str());
+          
+          int pIdx = payload.indexOf("\"plate\":\"");
+          if (pIdx == -1) pIdx = payload.indexOf("\"plate\": \""); // fallback
+          
+          if (pIdx > 0) {
+            int startIdx = pIdx + (payload.indexOf("\"plate\":\"") != -1 ? 9 : 10);
+            int endIdx = payload.indexOf("\"", startIdx);
+            String plate = payload.substring(startIdx, endIdx);
+            
+            if (plate == "Khong Nhan Dien Duoc" || plate == "Khong Thay Bien" || plate == "") {
+              printLCD("Loi Nhan Dien", "Vui long thu lai");
+            } else {
+              printLCD(plate, "Da thu phi");
+              Serial2.println("OPEN");
+            }
+          }
         } else {
           Serial.printf(">> LỖI KẾT NỐI PYTHON SERVER: %s\n", http.errorToString(httpCode).c_str());
           printLCD("Loi Mang LAN", "Khong thay Server");

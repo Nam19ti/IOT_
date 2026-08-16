@@ -247,8 +247,7 @@ void loop() {
   }
   
   // Logic xe đi RA (CB2)
-  // Tính luôn trường hợp d2 >= 990.0 (Timeout) là có xe chắn ngang làm mất dội sóng
-  bool trigger2 = (d2 < 20.0) || (baseline2 - d2 > THRESHOLD) || (d2 >= 990.0);
+  bool trigger2 = (d2 < 20.0) || (baseline2 - d2 > THRESHOLD);
   
   if (trigger2 && carInside) {
     // Xe bắt đầu tiến vào và chắn ngang Cảm biến 2 (Đang nằm dưới Barie)
