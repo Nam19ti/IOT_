@@ -43,8 +43,8 @@ class CameraClient:
             return None
             
         try:
-            # Tạo HTTP Request với Timeout 5s để tránh treo Server nếu mạng yếu
-            req = urllib.request.urlopen(self.url, timeout=5.0)
+            # Timeout 2.5 giây để nếu sai IP camera sẽ báo lỗi ngay, không bị treo 30s
+            req = urllib.request.urlopen(self.url, timeout=2.5)
             arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
             img = cv2.imdecode(arr, -1)
             
@@ -53,15 +53,16 @@ class CameraClient:
         except Exception as e:
             p(f"[CAMERA LỖI CHỤP HTTP]: {e} (URL: {self.url})")
             
-        # Thử fallback bằng OpenCV VideoCapture nếu URL là luồng video stream
-        try:
-            cap = cv2.VideoCapture(self.url)
-            ret, frame = cap.read()
-            cap.release()
-            if ret and frame is not None and frame.size > 0:
-                return frame
-        except Exception as e2:
-            p(f"[CAMERA LỖI VIDEO STREAM]: {e2}")
+        # Chỉ dùng VideoCapture fallback nếu URL chứa luồng video (như rtsp:// hoặc .mjpg/.mp4)
+        if "rtsp://" in self.url or ".mjpg" in self.url or ".mp4" in self.url:
+            try:
+                cap = cv2.VideoCapture(self.url)
+                ret, frame = cap.read()
+                cap.release()
+                if ret and frame is not None and frame.size > 0:
+                    return frame
+            except Exception as e2:
+                p(f"[CAMERA LỖI VIDEO STREAM]: {e2}")
 
         return None
 
