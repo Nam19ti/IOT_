@@ -83,10 +83,16 @@ void openGate() {
   }
 }
 
-// Kiểm tra xem có xe đang nằm dưới cổng (CB2) không
+// Kiểm tra xem có xe đang nằm dưới cổng (CB2) không (Đo 3 lần lấy giá trị nhỏ nhất để chống nhiễu)
 bool isCarUnderGate() {
-  float d2 = getDistance(trigPin2, echoPin2);
-  return (d2 < 20.0) || (baseline2 - d2 > THRESHOLD);
+  float min_d = 999.0;
+  for (int i = 0; i < 3; i++) {
+    float d2 = getDistance(trigPin2, echoPin2);
+    if (d2 < min_d) min_d = d2;
+    delay(15);
+  }
+  // Nếu khoảng cách d2 nhỏ (<20) hoặc giảm đột ngột so với nền
+  return (min_d < 20.0) || (baseline2 - min_d > THRESHOLD);
 }
 
 // Đóng cổng
