@@ -259,7 +259,8 @@ def create_app(controller):
             frames = controller.camera.capture_frames(num_frames=1, interval=0)
             # Kiểm tra tính hợp lệ của ảnh chụp
             if not frames or frames[0][0] is None:
-                return jsonify({"success": False, "error": "Khong chup duoc anh. Kiem tra URL IP Webcam!"})
+                cam_url = getattr(controller.camera, 'url', 'Chưa thiết lập')
+                return jsonify({"success": False, "error": f"Không thể chụp ảnh từ URL Camera: '{cam_url}'. Vui lòng kiểm tra lại URL trong [Cài Đặt]!"})
             
             # Tạo thư mục captures nếu chưa có
             os.makedirs("captures", exist_ok=True)
