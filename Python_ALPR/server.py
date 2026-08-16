@@ -604,19 +604,69 @@ def load_ai_bg(controller):
 def start_cloudflare_tunnel(controller, port=5000):
     """
     Hàm tạo đường hầm (Tunnel) Cloudflare.
-    Mục đích: Cho phép người dùng truy cập trang Web UI và các API từ bất kỳ đâu 
-    trên Internet thông qua URL Public (xxx.trycloudflare.com) thay vì chỉ dùng được mạng nội bộ (LAN).
-    Đồng thời tự động gửi link này về Telegram Admin.
+    Hỗ trợ đầy đủ Windows, macOS và Raspberry Pi 5 (Linux ARM64 / aarch64).
     """
+    import re, requests, subprocess, os, sys, time, platform
+    
+    tunnel_url = None
+    
+    # 1. Thử dùng thư viện pycloudflared trước
     try:
         from pycloudflared import try_cloudflare
-        import requests
-        p("[CLOUDFLARE] Dang mo Cloudflare Tunnel...")
-        # Tạo tunnel ánh xạ port 5000 của localhost ra ngoài mạng Internet
+        p("[CLOUDFLARE] Đang mở Cloudflare Tunnel qua pycloudflared...")
         tunnel = try_cloudflare(port=port, verbose=False)
+        tunnel_url = tunnel.tunnel
+    except Exception as e:
+        p(f"[CLOUDFLARE] pycloudflared báo lỗi ({e}), chuyển sang chế độ tự động chạy Cloudflare binary...")
+
+    # 2. Nếu pycloudflared bị lỗi (như lỗi 'aarch64' trên Pi 5), tự động tải binary chính thức tương ứng
+    if not tunnel_url:
+        try:
+            arch = platform.machine().lower()
+            system = sys.platform.lower()
+            
+            bin_dir = os.path.join(os.path.dirname(__file__), "history")
+            os.makedirs(bin_dir, exist_ok=True)
+            bin_name = "cloudflared.exe" if sys.platform == "win32" else "cloudflared"
+            bin_path = os.path.join(bin_dir, bin_name)
+            
+            if not os.path.exists(bin_path):
+                p("[CLOUDFLARE] Đang tự động tải Cloudflare binary chính thức cho hệ thống (Pi 5 ARM64)...")
+                if "aarch64" in arch or "arm64" in arch:
+                    download_url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+                elif "arm" in arch:
+                    download_url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm"
+                elif "win" in system:
+                    download_url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+                else:
+                    download_url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+                
+                r = requests.get(download_url, timeout=60)
+                with open(bin_path, "wb") as f:
+                    f.write(r.content)
+                if sys.platform != "win32":
+                    os.chmod(bin_path, 0o755)
+                p("[CLOUDFLARE] Đã tải xong binary!")
+
+            cmd = [bin_path, "tunnel", "--url", f"http://localhost:{port}"]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            
+            start_time = time.time()
+            while time.time() - start_time < 30:
+                line = proc.stderr.readline()
+                if not line and proc.poll() is not None:
+                    break
+                match = re.search(r'https://[a-zA-Z0-9-]+\.trycloudflare\.com', line)
+                if match:
+                    tunnel_url = match.group(0)
+                    break
+        except Exception as ex:
+            p(f"[CLOUDFLARE] Lỗi chạy binary: {ex}")
+
+    if tunnel_url:
         p("="*50)
-        p(f"  TRUY CAP TU XA QUA INTERNET:")
-        p(f"  >> {tunnel.tunnel}")
+        p(f"  TRUY CẬP TỪ XA QUA INTERNET:")
+        p(f"  >> {tunnel_url}")
         p("="*50)
         
         # Gửi link qua Telegram
@@ -625,18 +675,12 @@ def start_cloudflare_tunnel(controller, port=5000):
         if token and admin_id:
             try:
                 url = f"https://api.telegram.org/bot{token}/sendMessage"
-                msg = f"🟢 HỆ THỐNG ALPR ĐÃ KHỞI ĐỘNG!\n🌐 Link truy cập Web UI từ xa:\n{tunnel.tunnel}"
+                msg = f"🟢 HỆ THỐNG ALPR ĐÃ KHỞI ĐỘNG!\n🌐 Link truy cập Web UI từ xa:\n{tunnel_url}"
                 requests.post(url, json={"chat_id": admin_id, "text": msg}, timeout=10)
                 log_action("TELEGRAM_SENT", "Sent Cloudflare Tunnel link to Admin")
                 p(f"[CLOUDFLARE] Đã gửi link cho Admin Telegram ({admin_id})")
             except Exception as e:
                 p(f"[CLOUDFLARE] Không thể gửi link qua Telegram: {e}")
-                
-    except ImportError:
-        # Xử lý trường hợp chưa cài đặt thư viện
-        p("[CLOUDFLARE] Chua cai pycloudflared. Chay: pip install pycloudflared")
-    except Exception as e:
-        p(f"[CLOUDFLARE] Loi khoi dong tunnel: {e}")
 
 # Đoạn mã thực thi chính khi chạy file bằng câu lệnh `python server.py`
 if __name__ == '__main__':

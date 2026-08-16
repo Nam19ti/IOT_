@@ -231,13 +231,18 @@ class SyncManager:
             target_chat_id = None
             if vehicle_type == "known" and telegram_id:
                 target_chat_id = telegram_id
-            elif vehicle_type == "warning":
+            elif vehicle_type in ("warning", "stranger"):
                 target_chat_id = config.get("admin_telegram_id", "8785323128").strip()
                 
             if target_chat_id and telegram_token:
                 try:
                     url = f"https://api.telegram.org/bot{telegram_token}/sendPhoto"
-                    prefix = "⚠️ XE CẢNH BÁO XUẤT HIỆN" if vehicle_type == "warning" else "🚗 PHÁT HIỆN XE VÀO TRẠM"
+                    if vehicle_type == "warning":
+                        prefix = "⚠️ XE CẢNH BÁO XUẤT HIỆN"
+                    elif vehicle_type == "known":
+                        prefix = "🚗 XE QUEN VÀO TRẠM"
+                    else:
+                        prefix = "❓ XE LẠ VÀO TRẠM"
                     caption = f"{prefix}\n- Biển số: {plate}\n- Thời gian: {time.ctime(int(timestamp)/1000)}"
                     
                     if os.path.exists(img_path):
