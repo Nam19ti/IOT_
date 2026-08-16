@@ -1,6 +1,7 @@
 import cv2
 import urllib.request
 import numpy as np
+import requests
 from core import p
 
 class CameraClient:
@@ -37,23 +38,42 @@ class CameraClient:
     def fetch_image(self):
         """
         Lấy 1 khung hình (Frame) duy nhất từ luồng IP Webcam / Camera.
+        Sử dụng Browser User-Agent để tránh bị app Android / Web server chặn.
         """
         if not self.url:
             p("[CAMERA LỖI] URL Camera đang bị trống!")
             return None
-            
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+        }
+
+        # 1. Thử dùng thư viện `requests` kèm User-Agent của Trình Duyệt
         try:
-            # Timeout 2.5 giây để nếu sai IP camera sẽ báo lỗi ngay, không bị treo 30s
-            req = urllib.request.urlopen(self.url, timeout=2.5)
-            arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
-            img = cv2.imdecode(arr, -1)
-            
-            if img is not None and img.size > 0:
-                return img
+            r = requests.get(self.url, headers=headers, timeout=5.0)
+            if r.status_code == 200 and r.content:
+                arr = np.asarray(bytearray(r.content), dtype=np.uint8)
+                img = cv2.imdecode(arr, -1)
+                if img is not None and img.size > 0:
+                    return img
+            else:
+                p(f"[CAMERA LỖI HTTP STATUS {r.status_code}]: {self.url}")
         except Exception as e:
-            p(f"[CAMERA LỖI CHỤP HTTP]: {e} (URL: {self.url})")
-            
-        # Chỉ dùng VideoCapture fallback nếu URL chứa luồng video (như rtsp:// hoặc .mjpg/.mp4)
+            p(f"[CAMERA LỖI REQUESTS]: {e} (URL: {self.url})")
+
+        # 2. Fallback urllib có Request Header
+        try:
+            req = urllib.request.Request(self.url, headers=headers)
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                arr = np.asarray(bytearray(resp.read()), dtype=np.uint8)
+                img = cv2.imdecode(arr, -1)
+                if img is not None and img.size > 0:
+                    return img
+        except Exception as e2:
+            p(f"[CAMERA LỖI URLLIB]: {e2}")
+
+        # 3. Fallback VideoCapture nếu là luồng video stream
         if "rtsp://" in self.url or ".mjpg" in self.url or ".mp4" in self.url:
             try:
                 cap = cv2.VideoCapture(self.url)
@@ -61,8 +81,8 @@ class CameraClient:
                 cap.release()
                 if ret and frame is not None and frame.size > 0:
                     return frame
-            except Exception as e2:
-                p(f"[CAMERA LỖI VIDEO STREAM]: {e2}")
+            except Exception as e3:
+                p(f"[CAMERA LỖI STREAM]: {e3}")
 
         return None
 
