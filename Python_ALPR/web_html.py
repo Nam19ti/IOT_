@@ -109,35 +109,54 @@ def get_html(controller):
         <div class="card">
             <div class="card-title">&#9881; CAU HINH HE THONG</div>
             <div class="form-row">
-                <label>IP Camera:</label>
-                <input type="text" id="cam_ip" value="{cam_url}" placeholder="http://192.168.x.x:8080/photo.jpg">
+                <label>URL ESP32-CAM:</label>
+                <input type="text" id="cameraUrl" value="{controller.config.get('ip_camera_url', 'http://192.168.137.233/photo.jpg')}" placeholder="http://192.168.137.233/photo.jpg">
             </div>
             <div class="form-row">
-                <label>Gemini API Key:</label>
-                <input type="password" id="gemini_key" value="{gem_key}">
-            </div>
-            <div class="form-row">
-                <label>TB Token:</label>
-                <input type="text" id="cameraUrl" value="{cam_url}" placeholder="rtsp://admin:pass@192.168.1.100:554/stream">
+                <label>IP Mạch 2 (IOT_2):</label>
+                <input type="text" id="iot2_ip" value="{controller.config.get('iot2_ip', '192.168.137.199')}" placeholder="192.168.137.199">
             </div>
             <div class="btn-row">
                 <button class="btn btn-green" onclick="saveSettings()">Luu Cau Hinh</button>
             </div>
-
             <div id="save_msg"></div>
+        </div>
+
+        <div class="card" style="grid-column: 1 / -1;">
+            <div class="card-title">&#128275; ĐIỀU KHIỂN CỔNG THỦ CÔNG (LAN)</div>
+            <p style="color: #94a3b8; font-size: 0.9rem; text-align: center; margin-bottom: 1rem;">Lưu ý: Bạn phải điền đúng IP Mạch 2 ở ô Cấu Hình bên trên trước khi điều khiển.</p>
+            <div class="btn-row" style="gap: 1.5rem;">
+                <button class="btn btn-primary" onclick="controlGate('/open_gate')">Mở (Tự Đóng Sau 3s Xe Qua)</button>
+                <button class="btn btn-warn" style="background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #000;" onclick="controlGate('/open_gate_manual')">Mở Mãi Mãi (Không Tự Đóng)</button>
+                <button class="btn btn-danger" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff;" onclick="controlGate('/close_gate')">Đóng Cổng Khẩn Cấp</button>
+            </div>
         </div>
     </div>
 
 <script>
     function saveSettings() {{
         const newUrl = document.getElementById('cameraUrl').value;
+        const iot2Ip = document.getElementById('iot2_ip').value;
         fetch('/set_settings', {{
             method: 'POST',
             headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify({{ url: newUrl }})
+            body: JSON.stringify({{ url: newUrl, iot2_ip: iot2Ip }})
         }}).then(r => r.json()).then(data => {{
-            if(data.success) alert("Đã lưu Cấu hình Camera!");
+            if(data.success) alert("Đã lưu Cấu hình thành công!");
         }});
+    }}
+
+    function controlGate(actionPath) {{
+        const iot2Ip = document.getElementById('iot2_ip').value;
+        if (!iot2Ip) {{
+            alert("Vui lòng nhập IP Mạch 2 trước!");
+            return;
+        }}
+        
+        fetch('http://' + iot2Ip + actionPath)
+            .then(r => r.text())
+            .then(txt => alert("Phản hồi từ Mạch 2: " + txt))
+            .catch(err => alert("Lỗi kết nối tới Mạch 2: " + err));
     }}
 
     function testOCR() {{

@@ -108,6 +108,8 @@ def create_app(controller):
             controller.config.set('ip_camera_url', d['url'])
             if controller.camera:
                 controller.camera.set_url(d['url'])
+        if 'iot2_ip' in d:
+            controller.config.set('iot2_ip', d['iot2_ip'])
         return jsonify({"success": True})
 
     @app.route('/')

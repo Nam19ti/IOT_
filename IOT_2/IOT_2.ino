@@ -15,6 +15,14 @@ const char* WIFI_PASSWORD = "abcd1234";
 const char* PYTHON_SERVER_IP = "192.168.137.1"; // <-- Thay bằng IP máy tính của bạn nếu cần
 const int   PYTHON_SERVER_PORT = 5000;
 
+// =========================================================
+// CẤU HÌNH IP TĨNH CHO IOT_2 (ESP32)
+// =========================================================
+IPAddress local_IP(192.168, 137, 199);
+IPAddress gateway(192.168, 137, 1);
+IPAddress subnet(255, 255, 255, 0);
+IPAddress primaryDNS(8, 8, 8, 8);
+
 WebServer server(80);
 
 // LCD I2C
@@ -73,7 +81,26 @@ void handleOpenGate() {
   printLCD(plate, "Da thu phi");
   Serial2.println("OPEN"); // Ra lệnh cho Mạch 1 mở cổng
   
+  server.sendHeader("Access-Control-Allow-Origin", "*");
   server.send(200, "text/plain", "OK! Da mo cong.");
+}
+
+void handleOpenGateManual() {
+  // Mở cổng nhưng KHÔNG cho phép tự động đóng
+  printLCD("Mo thu cong", "Khong tu dong");
+  Serial2.println("OPEN_MANUAL");
+  
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "text/plain", "OK! Da mo cong thu cong.");
+}
+
+void handleCloseGate() {
+  // Đóng cổng thủ công
+  printLCD("Dong thu cong", "He thong SS");
+  Serial2.println("CLOSE");
+  
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "text/plain", "OK! Da dong cong thu cong.");
 }
 
 void handleDenyGate() {
@@ -84,6 +111,7 @@ void handleDenyGate() {
   }
 
   printLCD(plate, "HET TIEN/TU CHOI");
+  server.sendHeader("Access-Control-Allow-Origin", "*");
   server.send(200, "text/plain", "OK! Da hien thi canh bao.");
 }
 
@@ -98,9 +126,16 @@ void setup() {
   lcd.backlight();
   printLCD("Khoi dong", "VETC LAN Slave");
 
+  // Cài đặt IP Tĩnh trước khi kết nối WiFi
+  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, primaryDNS)) {
+    Serial.println(">> Lỗi cấu hình IP Tĩnh!");
+  }
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   
   server.on("/open_gate", HTTP_GET, handleOpenGate);
+  server.on("/open_gate_manual", HTTP_GET, handleOpenGateManual);
+  server.on("/close_gate", HTTP_GET, handleCloseGate);
   server.on("/deny_gate", HTTP_GET, handleDenyGate);
   server.begin();
 }

@@ -78,7 +78,7 @@ async function processFirebaseQueue() {
                 }
 
                 // GỬI LỆNH ĐÓNG/MỞ CỔNG XUỐNG IOT_2 QUA MẠNG LAN
-                const iot2Ip = process.env.IOT2_IP || '192.168.137.99'; // IP cua IOT_2
+                const iot2Ip = process.env.IOT2_IP || '192.168.137.199'; // IP cua IOT_2
                 try {
                     console.log(`>> Đang gửi lệnh ${iot2_action} tới IOT_2 (${iot2Ip})...`);
                     await fetch(`http://${iot2Ip}/${iot2_action}?plate=${carEvent.plate}`);

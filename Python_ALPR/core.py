@@ -7,9 +7,12 @@ import queue
 import cv2
 
 def p(msg):
-    """Log an toan tren Windows CMD"""
-    sys.stdout.write(str(msg) + "\n")
-    sys.stdout.flush()
+    try:
+        sys.stdout.write(str(msg) + "\n")
+        sys.stdout.flush()
+    except UnicodeEncodeError:
+        sys.stdout.write(str(msg).encode('ascii', 'ignore').decode('ascii') + "\n")
+        sys.stdout.flush()
 
 class Config:
     def __init__(self, filename="config.json"):

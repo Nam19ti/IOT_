@@ -5,6 +5,10 @@ import time
 import threading
 from core import p
 
+class CloudSync:
+    def __init__(self, tb_token=""):
+        pass
+
     def _img_to_b64_full(self, img_frame):
         if img_frame is None or img_frame.size == 0:
             return ""
@@ -16,10 +20,17 @@ from core import p
             p(f"[CLOUD] Loi Encode anh: {e}")
             return ""
 
+    def publish_ai_result(self, plate, speed, direction, img_path):
+        # Doc anh tu duong dan thanh numpy array roi goi push_firebase
+        img_frame = cv2.imread(img_path)
+        # TODO: Lay config firebase url
+        self.push_firebase("CAR_" + str(int(time.time())), speed, direction, plate, img_frame)
+
     def push_firebase(self, car_id, speed, direction, plate, image_frame=None):
-        firebase_url = self.config.get("firebase_url", "")
+        # Hardcode firebase_url tạm thời hoặc đọc từ file JSON nếu cần
+        firebase_url = "https://test-a2b8e-default-rtdb.firebaseio.com/"
         if not firebase_url:
-            p("[FIREBASE LOI] Chua cau hinh firebase_url trong config.json")
+            p("[FIREBASE LOI] Chua cau hinh firebase_url")
             return
             
         # Dam bao url ket thuc bang /
