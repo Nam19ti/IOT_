@@ -14,11 +14,12 @@ import datetime
 import shutil
 
 # Import các thành phần (modules) cốt lõi của hệ thống từ các file tự định nghĩa
-from core import SystemController, p # p là hàm in log ra console
+from core import SystemController, p, log_action # p là hàm in log ra console
 from camera import CameraClient # Class để kết nối với camera ESP32/IP camera
 from ai import HybridOCR # Class chứa AI nhận diện biển số (EasyOCR + Gemini)
 from cloud import CloudSync # Class đồng bộ dữ liệu lên cloud
 from sync_manager import SyncManager # Class quản lý hàng đợi và tiến trình đồng bộ dữ liệu
+
 
 def create_app(controller):
     """
@@ -58,6 +59,22 @@ def create_app(controller):
         session.pop('logged_in', None)
         return jsonify({"success": True})
         
+    @app.route('/api/offline_queue', methods=['GET'])
+    def get_offline_queue():
+        """Đọc file CSV hiển thị lên UI cho người dùng xem"""
+        import csv
+        import os
+        csv_file = os.path.join(os.path.dirname(__file__), "history", "pending_sync.csv")
+        if not os.path.exists(csv_file):
+            return jsonify({"success": True, "data": []})
+        try:
+            with open(csv_file, mode='r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+            return jsonify({"success": True, "data": rows})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)})
+            
     @app.route('/api/strangers', methods=['GET'])
     def get_strangers():
         """Lấy danh sách xe lạ từ MongoDB để hiển thị lên Web UI"""
@@ -144,9 +161,11 @@ def create_app(controller):
                                 if os.path.exists(img_path):
                                     with open(img_path, 'rb') as photo:
                                         requests.post(url, data={"chat_id": telegram_id, "caption": caption}, files={"photo": photo}, timeout=15.0)
+                                        log_action("TELEGRAM_SENT", f"Sent Recheck alert (With Image) to {telegram_id} for plate {plate}")
                                     sent = True
                             if not sent:
                                 requests.post(f"https://api.telegram.org/bot{telegram_token}/sendMessage", data={"chat_id": telegram_id, "text": caption}, timeout=15.0)
+                                log_action("TELEGRAM_SENT", f"Sent Recheck alert (No Image) to {telegram_id} for plate {plate}")
                     
                     if key: db['strangers'].delete_one({"_id": ObjectId(key)})
                     return jsonify({"success": True, "result": "known"})
@@ -176,6 +195,17 @@ def create_app(controller):
         # Nếu không tìm thấy file, trả về lỗi 404
         return "Not found", 404
         
+    
+    @app.route('/history/<path:filename>')
+    def serve_history(filename):
+        """Trả về file log hoặc file ảnh lưu trong thư mục history"""
+        import os
+        path = os.path.join(os.path.dirname(__file__), 'history', filename)
+        if os.path.exists(path):
+            if filename.endswith(".csv"):
+                return send_file(path, mimetype='text/csv')
+            return send_file(path, mimetype='image/jpeg')
+        return "Not found", 404
     @app.route('/get_stats')
     def get_stats():
         """
@@ -220,7 +250,7 @@ def create_app(controller):
             p(f"    -> [LOI] {e}")
             return jsonify({"success": False, "error": str(e)})
 
-        @app.route('/open_gate', methods=['GET', 'POST'])
+    @app.route('/open_gate', methods=['GET', 'POST'])
     def open_gate():
         import requests
         try:
@@ -247,7 +277,7 @@ def create_app(controller):
         except:
             return jsonify({"success": False, "error": "Khong the ket noi den ESP32"})
 
-@app.route('/process_latest')
+    @app.route('/process_latest')
     def process_latest():
         """
         [Route] /process_latest
@@ -569,6 +599,7 @@ def start_cloudflare_tunnel(controller, port=5000):
                 url = f"https://api.telegram.org/bot{token}/sendMessage"
                 msg = f"🟢 HỆ THỐNG ALPR ĐÃ KHỞI ĐỘNG!\n🌐 Link truy cập Web UI từ xa:\n{tunnel.tunnel}"
                 requests.post(url, json={"chat_id": admin_id, "text": msg}, timeout=10)
+                log_action("TELEGRAM_SENT", "Sent Cloudflare Tunnel link to Admin")
                 p(f"[CLOUDFLARE] Đã gửi link cho Admin Telegram ({admin_id})")
             except Exception as e:
                 p(f"[CLOUDFLARE] Không thể gửi link qua Telegram: {e}")

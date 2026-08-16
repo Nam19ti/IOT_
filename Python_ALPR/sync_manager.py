@@ -5,7 +5,7 @@ import threading
 import requests
 import cv2
 import base64
-from core import p
+from core import p, log_action
 
 # ==========================================
 # KHỞI TẠO VÀ KIỂM TRA THƯ VIỆN DATABASE

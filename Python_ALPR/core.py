@@ -90,3 +90,22 @@ class SystemController:
         # 3. Các Module Ngoại vi (Được khởi tạo sau bởi server.py)
         self.camera = None          # Module kết nối IP Camera
         self.sync_manager = None    # Luồng chạy nền đồng bộ Cloud
+
+
+def log_action(action_type, details, ip_address="System"):
+    """Lưu nhật ký hành động cục bộ"""
+    import os, time
+    log_dir = os.path.join(os.path.dirname(__file__), "history")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "action_logs.csv")
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    file_exists = os.path.exists(log_file)
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            if not file_exists:
+                f.write("Time,IP,Action,Details\n")
+            safe_details = str(details).replace('"', '""')
+            f.write(f'"{timestamp}","{ip_address}","{action_type}","{safe_details}"\n')
+    except Exception as e:
+        pass
