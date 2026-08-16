@@ -225,14 +225,6 @@ def get_html(controller):
               <input type="password" id="firebase_url" style="width:100%; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: white; box-sizing:border-box; margin-top: 5px;"
                   value="{controller.config.get('firebase_url', '')}" placeholder="https://your-project.firebaseio.com/">
             </div>
-            <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
-              <input type="checkbox" id="enable_firebase" { 'checked' if controller.config.get('enable_firebase', True) else '' }>
-              <label for="enable_firebase" style="color: white; font-size: 0.9rem;">Bật đẩy dữ liệu lên Firebase</label>
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
-              <input type="checkbox" id="enable_telegram" { 'checked' if controller.config.get('enable_telegram', True) else '' }>
-              <label for="enable_telegram" style="color: white; font-size: 0.9rem;">Bật quét MongoDB & báo Telegram</label>
-            </div>
             <button class="btn btn-green" style="width: 100%; margin-top: 10px;" onclick="saveSettings()">Lưu Cài Đặt</button><a href="/history/action_logs.csv" target="_blank" class="btn btn-blue" style="width:100%; display:block; text-align:center; text-decoration:none; margin-top:10px;">Tải xuống File Nhật Ký (Log)</a>
             <div id="save_msg" style="text-align:center; color:#10b981; font-weight:bold;"></div>
           </div>
@@ -398,8 +390,6 @@ def get_html(controller):
     const tele = document.getElementById('telegram_token').value;
     const mongo = document.getElementById('mongo_uri').value;
     const fire = document.getElementById('firebase_url').value;
-    const en_fire = document.getElementById('enable_firebase').checked;
-    const en_tele = document.getElementById('enable_telegram').checked;
     
     fetch('/set_settings', {{
       method:'POST', headers:{{'Content-Type':'application/json'}},
@@ -410,9 +400,7 @@ def get_html(controller):
         "ai_mode": ai_mode,
         "telegram_token": tele,
         "mongo_uri": mongo,
-        "firebase_url": fire,
-        "enable_firebase": en_fire,
-        "enable_telegram": en_tele
+        "firebase_url": fire
       }})
     }}).then(r=>r.json()).then(d=>{{
       document.getElementById('save_msg').innerText = d.success ? ' Đã lưu Cài đặt!' : ' Lỗi lưu!';
