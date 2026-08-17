@@ -49,29 +49,29 @@ Dự án sử dụng 2 bo mạch ESP32 giao tiếp với nhau. Để hệ thốn
 
 ```mermaid
 graph TD
-    subgraph Mạch 1: ESP32 Master Logic (Xử lý Cơ Điện)
-        ESP1[ESP32_1]
-        SR04_1[Cảm biến Siêu âm 1 - Lối vào]
-        SR04_2[Cảm biến Siêu âm 2 - Dưới cổng]
-        Servo[Động cơ Servo - Barie]
-        Buzzer[Còi báo động]
-        Btn[Nút bấm Mở/Đóng]
+    subgraph SG1 ["Mạch 1: ESP32 Master Logic (Cơ Điện)"]
+        ESP1["ESP32_1"]
+        SR04_1["Cảm biến 1 (Lối vào)"]
+        SR04_2["Cảm biến 2 (Dưới cổng)"]
+        Servo["Động cơ Servo (Barie)"]
+        Buzzer["Còi báo động"]
+        Btn["Nút bấm Mở/Đóng"]
         
-        ESP1 -- "GPIO 13 (Trig) / 12 (Echo)" --- SR04_1
-        ESP1 -- "GPIO 5 (Trig) / 18 (Echo)" --- SR04_2
+        ESP1 -- "GPIO 13 / 12" --- SR04_1
+        ESP1 -- "GPIO 5 / 18" --- SR04_2
         ESP1 -- "GPIO 4 (PWM)" --- Servo
         ESP1 -- "GPIO 14" --- Buzzer
-        ESP1 -- "GPIO 26 (PULLUP)" --- Btn
+        ESP1 -- "GPIO 26" --- Btn
     end
 
-    subgraph Mạch 2: ESP32 Network Gateway (Xử lý WiFi)
-        ESP2[ESP32_2]
-        LCD[Màn hình LCD I2C]
+    subgraph SG2 ["Mạch 2: ESP32 Network Gateway (WiFi)"]
+        ESP2["ESP32_2"]
+        LCD["Màn hình LCD I2C"]
         
         ESP2 -- "SDA / SCL" --- LCD
     end
 
-    ESP1 <--"Giao tiếp UART2 (Chân 16 nối 17, 17 nối 16)"--> ESP2
+    ESP1 <--"UART2 (Chân 16-17)"--> ESP2
     ESP1 -.- "Nối chung GND" -.- ESP2
 ```
 
@@ -116,46 +116,46 @@ Sơ đồ dưới đây mô tả chính xác vòng đời (Lifecycle) của mộ
 
 ```mermaid
 sequenceDiagram
-    participant Xe as Ô tô / Xe máy
-    participant M1 as ESP32 (Mạch 1 - Cơ điện)
-    participant M2 as ESP32 (Mạch 2 - Mạng)
+    participant Xe as Ô tô - Xe máy
+    participant M1 as ESP32 Mạch 1
+    participant M2 as ESP32 Mạch 2
     participant Py as Python Server
-    participant Cam as IP Webcam (Android)
-    participant AI as Google Gemini API
-    participant DB as SQLite Database
+    participant Cam as IP Webcam
+    participant AI as Gemini API
+    participant DB as SQLite DB
 
     Xe->>M1: 1. Tiến vào vùng quét
     activate M1
-    M1->>M1: 2. Cảm biến S1 phát hiện vật cản
-    M1->>M2: 3. Gửi lệnh báo hiệu (UART)
+    M1->>M1: 2. Cảm biến S1 phát hiện
+    M1->>M2: 3. Gửi lệnh báo hiệu
     activate M2
-    M2->>Py: 4. Gọi API báo xe đến (HTTP GET)
+    M2->>Py: 4. Gọi API báo xe đến
     deactivate M2
     activate Py
-    Py->>Cam: 5. Yêu cầu chụp ảnh tĩnh (urllib)
+    Py->>Cam: 5. Yêu cầu chụp ảnh tĩnh
     activate Cam
-    Cam-->>Py: 6. Trả về mảng byte ảnh JPEG (<0.1s)
+    Cam-->>Py: 6. Trả về mảng byte ảnh
     deactivate Cam
     
-    Py->>AI: 7. Gửi ảnh + Prompt lên Đám mây
+    Py->>AI: 7. Gửi ảnh lên Đám mây
     activate AI
     Note right of AI: AI phân tích và<br/>nhận diện ký tự OCR
-    AI-->>Py: 8. Trả về chuỗi JSON chứa Biển số
+    AI-->>Py: 8. Trả về chuỗi JSON
     deactivate AI
     
-    Py->>Py: 9. Lọc dữ liệu rác bằng Regex
-    Py->>DB: 10. Lưu mốc thời gian & Biển số
+    Py->>Py: 9. Lọc dữ liệu rác (Regex)
+    Py->>DB: 10. Lưu mốc thời gian
     
-    Py->>M2: 11. Gửi lệnh Mở Cổng (HTTP GET)
+    Py->>M2: 11. Gửi lệnh Mở Cổng
     deactivate Py
     activate M2
-    M2->>M1: 12. Truyền cờ Mở cổng (UART)
+    M2->>M1: 12. Truyền cờ Mở cổng
     deactivate M2
-    M1->>M1: 13. Mở Servo 90 độ + Kêu còi
+    M1->>M1: 13. Mở Servo 90 độ
     Xe->>M1: 14. Xe đi qua Barie
-    M1->>M1: 15. Cảm biến S2 quét đuôi xe
-    Note left of M1: Zero-Crash: Đợi cho<br/>tới khi S2 hoàn toàn<br/>trống trải mới đóng
-    M1->>M1: 16. Đợi 3s và Hạ Barie (0 độ)
+    M1->>M1: 15. Cảm biến S2 quét đuôi
+    Note left of M1: Đợi tới khi S2 hoàn toàn<br/>trống trải mới đóng cổng
+    M1->>M1: 16. Đợi 3s và Hạ Barie
     deactivate M1
 ```
 
