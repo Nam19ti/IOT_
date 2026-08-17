@@ -63,13 +63,17 @@ class CameraClient:
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Connection": "close"
         }
+
+        # Bỏ qua proxy hệ thống để tránh lỗi định tuyến mạng LAN
+        proxies = {"http": None, "https": None}
 
         for target_url in candidate_urls:
             # 1. Thử lấy ảnh bằng thư viện `requests` kèm User-Agent giả lập Trình Duyệt
             try:
-                r = requests.get(target_url, headers=headers, timeout=3.0)
+                r = requests.get(target_url, headers=headers, proxies=proxies, timeout=10.0)
                 if r.status_code == 200 and r.content:
                     arr = np.asarray(bytearray(r.content), dtype=np.uint8)
                     img = cv2.imdecode(arr, -1)
@@ -85,8 +89,9 @@ class CameraClient:
 
             # 2. Fallback bằng urllib
             try:
+                # urllib không có tham số proxy riêng, nhưng timeout 10.0s sẽ giúp tránh đứt gãy
                 req = urllib.request.Request(target_url, headers=headers)
-                with urllib.request.urlopen(req, timeout=3.0) as resp:
+                with urllib.request.urlopen(req, timeout=10.0) as resp:
                     arr = np.asarray(bytearray(resp.read()), dtype=np.uint8)
                     img = cv2.imdecode(arr, -1)
                     if img is not None and img.size > 0:
