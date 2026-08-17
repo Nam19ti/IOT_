@@ -31,8 +31,9 @@ Dự án được phân chia thành 2 hệ thống cốt lõi: Mạng lưới Ph
 + Tích hợp AI thành công: Server Python đã giao tiếp ổn định với Gemini, trích xuất chính xác chuỗi ký tự biển số ngay cả khi ảnh bị lóa hoặc xe di chuyển.
 + Giao diện Quản trị (Web UI): Cung cấp bảng điều khiển (Dashboard) cho phép bảo vệ xem lịch sử ra vào, xem ảnh chụp xe, và có nút ấn Mở/Đóng cổng khẩn cấp qua giao diện web.
 
-## 5. Sơ đồ đấu nối (Wiring Diagram)
+## 5. Sơ đồ đấu nối và Hướng dẫn cài đặt (Wiring Diagram & Installation Guide)
 
+### 5.1. Sơ đồ đấu nối phần cứng
 - Mạch 1 (ESP32 - Master Hardware Logic):
   - Chân 13 (Trig), 12 (Echo) --> Cảm biến siêu âm 1 (Nhận diện xe đi vào vùng cổng)
   - Chân 5 (Trig), 18 (Echo) --> Cảm biến siêu âm 2 (Nhận diện xe đã qua barie để đóng cổng an toàn)
@@ -44,6 +45,23 @@ Dự án được phân chia thành 2 hệ thống cốt lõi: Mạng lưới Ph
 - Mạch 2 (ESP32 - WiFi & LAN Slave):
   - Chân 16 (RX2), 17 (TX2) --> Nối chéo (TX-RX, RX-TX) sang Mạch 1 để truyền/nhận lệnh.
   - Nguồn cấp 5V & GND nối chung với hệ thống điện của Mạch 1.
+
+### 5.2. Hướng dẫn cài đặt và Triển khai
+- Cài đặt phần cứng (ESP32):
+  - Cài đặt Arduino IDE và thêm gói bo mạch ESP32.
+  - Tải thư viện `ESP32Servo` và `LiquidCrystal_I2C` (nếu dùng màn hình LCD).
+  - Nạp file `IOT.ino` vào Mạch 1.
+  - Nạp file `IOT_2.ino` vào Mạch 2 (Lưu ý: Mạch 2 mặc định sử dụng IP động DHCP, kiểm tra IP của mạch qua Serial Monitor hoặc Router).
+- Cài đặt phần mềm (Python Server):
+  - Cài đặt Python 3.x trên máy tính hoặc Raspberry Pi.
+  - Cài đặt các thư viện yêu cầu: `pip install flask requests opencv-python numpy google-generativeai`.
+  - Mở file `core.py` hoặc `ai.py` để cấu hình API Key của Google Gemini nếu cần thiết.
+  - Chạy Server bằng lệnh: `python server.py`.
+- Thiết lập Camera (Android):
+  - Tải ứng dụng `IP Webcam` trên CH Play.
+  - Cài đặt độ phân giải ở mức 1920x1080 (hoặc thấp hơn) để tối ưu hóa tốc độ gửi ảnh.
+  - Tích chọn `Keep screen awake` để tránh việc hệ điều hành Android tự động cho app ngủ đông (gây ra độ trễ 2-3s).
+  - Bấm `Start Server` trên điện thoại, ghi lại địa chỉ IP xuất hiện trên màn hình (VD: `http://192.168.1.xxx:8080`) và nhập vào giao diện Web quản lý trên máy tính.
 
 ## 6. Sơ đồ hoạt động (Operation Flow)
 - Xe tiến vào vùng cổng --> Cảm biến siêu âm 1 bị che.
