@@ -174,88 +174,68 @@ sequenceDiagram
 + Bước 5: Đóng cổng An toàn (Safe Closing)
   - Xe tiến vào sân đỗ, quét qua Cảm biến siêu âm 2. Lúc này thuật toán Zero-Crash của Mạch 1 bắt đầu làm việc. Mạch 1 liên tục giám sát Cảm biến 2, chỉ khi nào đuôi xe đã hoàn toàn đi qua (Cảm biến 2 đo được khoảng cách xa trở lại), mạch mới đếm ngược 3 giây để từ từ hạ cần Barie xuống, kết thúc một vòng tuần hoàn hoàn mỹ.
 
-## 6. Cấu trúc chi tiết của file (Detailed File Structure)
-+ `IOT.ino`
-  - File nạp cho Mạch 1 (ESP32).
-  - Khởi tạo thư viện `ESP32Servo`, các chân GPIO.
-  - Chứa thuật toán chống dội nút bấm (Debounce), thuật toán tránh kẹt xe dùng cảm biến siêu âm, logic điều khiển Barie.
-+ `IOT_2.ino`
-  - File nạp cho Mạch 2 (ESP32).
-  - Khởi tạo thư viện `WiFi`, `WebServer`.
-  - Quản lý kết nối DHCP, tạo máy chủ tại cổng 80, chứa các hàm Endpoint như `handleOpenGate()`, `handleCloseGate()`.
-+ `server.py`
-  - File chạy chính của Server Backend (sử dụng framework Flask).
-  - Quản lý các Route API của Web UI, render file HTML, liên kết các module Camera, AI, DB lại với nhau.
-+ `camera.py`
-  - Module phụ trách luồng Camera.
-  - Sử dụng `urllib` để gửi gói tin cực nhẹ đến địa chỉ IP Webcam Android, trích xuất ma trận điểm ảnh (NumPy array) và giao cho OpenCV.
-+ `ai.py`
-  - Module tích hợp Trí tuệ nhân tạo.
-  - Khởi tạo Gemini model, tiền xử lý hình ảnh (có thể cắt xén ROI - Vùng quan tâm), đóng gói request và xử lý chuỗi JSON trả về.
-+ `db.py`
-  - Module Cơ sở dữ liệu SQLite cục bộ.
-  - Khởi tạo bảng `history`, thêm mới các bản ghi (Thời gian, Biển số, Đường dẫn ảnh).
-+ `core.py`
-  - Chứa các hàm tiện ích chung dùng cho toàn hệ thống như hàm `p()` để log ra màn hình Console giúp dễ dàng Debug.
-+ `cloud.py` (Tùy chọn)
-  - File hỗ trợ đồng bộ dữ liệu song song lên Firebase Realtime Database nếu dự án cần quản lý từ xa qua Internet.
-+ `templates/` & `static/`
-  - Thư mục chứa giao diện Front-End của Web UI (Mã HTML, CSS, JavaScript).
-  - Giao diện được thiết kế tương thích với bảo vệ thao tác trên máy tính bảng hoặc laptop.
+## 6. Cấu trúc mã nguồn và Tệp tin (Source Code Architecture)
+Dự án được tổ chức theo cấu trúc Module hóa (Modular Design), tách biệt hoàn toàn giữa C/C++ (Dành cho Vi điều khiển) và Python (Dành cho Máy chủ):
 
-## 7. Danh sách Thư viện và Hàm sử dụng (Libraries & Functions Tree)
+```text
+IOT_ThangLong/
+├── IOT_/
+│   ├── IOT.ino            # Core C++ Firmware nạp cho Mạch 1 (ESP32 Master Logic)
+│   └── IOT_2/
+│       └── IOT_2.ino      # Core C++ Firmware nạp cho Mạch 2 (ESP32 Network Gateway)
+├── Python_ALPR/
+│   ├── server.py          # Entry point của Máy chủ Flask Web/API
+│   ├── ai.py              # Module giao tiếp Google Gemini Vision API
+│   ├── camera.py          # Module lấy ảnh Snapshot từ IP Webcam Android
+│   ├── db.py              # Module tương tác với CSDL SQLite (Lịch sử xe ra/vào)
+│   ├── core.py            # Chứa các hàm tiện ích bổ trợ (Logger, Utils)
+│   ├── config.json        # Tệp cấu hình IP Camera và các thông số tùy chỉnh
+│   ├── requirements.txt   # Danh sách thư viện Python cần thiết (pip install)
+│   ├── static/            # Thư mục chứa CSS, JavaScript tĩnh cho giao diện Web
+│   └── templates/         # Thư mục chứa các tệp HTML (Trang chủ Dashboard, Đăng nhập)
+└── README.md              # Báo cáo Khoa học chi tiết dự án (Tệp tin này)
+```
 
-Để dễ dàng nắm bắt, toàn bộ thư viện và hàm được phân nhóm theo Luồng công việc (Workflow) và mô tả dưới dạng cấu trúc cây (Tree).
++ Phân tích mã nguồn Nhóm C/C++: Hai tệp `.ino` được thiết kế tối giản, loại bỏ hoàn toàn các vòng lặp `delay()` thừa thãi. Hệ thống sử dụng thuật toán ngắt phần cứng (Hardware Interrupts) và bộ đếm thời gian thực `millis()` để đảm bảo Mạch ESP32 không bao giờ bị nghẽn lệnh.
++ Phân tích mã nguồn Nhóm Python: Việc chia nhỏ mã nguồn thành từng Module (`ai.py`, `camera.py`, `db.py`) tuân thủ nghiêm ngặt nguyên lý Single Responsibility Principle (SRP) trong thiết kế phần mềm, giúp quá trình bảo trì, gỡ lỗi và nâng cấp tính năng mới trở nên vô cùng dễ dàng.
 
-### 7.1. Luồng Phần cứng (Hardware Workflow)
+## 7. Danh sách Thư viện và Tập lệnh (Libraries & Core Functions Tree)
+Để tiện cho việc tra cứu và phát triển kế thừa, dưới đây là thống kê toàn bộ Thư viện (Dependencies) và các Hàm cốt lõi (Core Functions) chia theo luồng thực thi:
 
-+ Mạch 1: ESP32 Master Logic (`IOT.ino`)
-  - [Thư viện] `ESP32Servo`: Điều khiển góc quay chính xác cho động cơ Barie.
-  - [Hàm] `setup()`: Khởi tạo chân GPIO, gắn ngắt (Interrupt) cho nút bấm.
-  - [Hàm] `loop()`: Vòng lặp chính, liên tục gọi hàm đo khoảng cách và đọc tín hiệu UART.
-  - [Hàm] `measureDistance()`: Phát xung `TRIG` và tính toán thời gian `ECHO` để ra khoảng cách (cm).
-  - [Hàm] `handleButtonInterrupt()`: Hàm ngắt (Interrupt) dùng `IRAM_ATTR` xử lý tín hiệu nhấn nút tức thời (kèm thuật toán Debounce 500ms).
-  - [Hàm] `openGate()`, `closeGate()`: Ghi góc 90 độ / 0 độ cho Servo.
-  - [Hàm] `buzzerAlert()`: Nhại còi bíp bíp cảnh báo xe đang di chuyển.
+### 7.1. Khối Phần cứng nhúng (Embedded Hardware)
++ Module ESP32 Master (`IOT.ino`)
+  - [Thư viện] `ESP32Servo`: Thay thế thư viện Servo truyền thống, cung cấp xung PWM chính xác hơn để điều khiển Barie đóng mở góc 90 độ mượt mà, không bị giật cục.
+  - [Hàm] `measureDistance()`: Phát một xung `TRIG` siêu ngắn (10 micro-giây) và đo thời gian vọng lại của chân `ECHO` để quy đổi ra khoảng cách (đơn vị: cm).
+  - [Hàm] `handleButtonInterrupt()`: Hàm phục vụ ngắt ngoài (ISR) với từ khóa `IRAM_ATTR` chạy trực tiếp trên thanh ghi RAM, kết hợp thuật toán Debounce (500ms) để loại bỏ hoàn toàn nhiễu điện khi bảo vệ nhấn phím cơ học.
+  - [Hàm] `openGate()` / `closeGate()`: Hàm thực thi chốt góc Servo và kích hoạt nhại còi (Buzzer) báo hiệu an toàn.
 
-+ Mạch 2: ESP32 WiFi & LAN Slave (`IOT_2.ino`)
-  - [Thư viện] `WiFi`: Quản lý kết nối mạng LAN/Internet qua giao thức DHCP.
-  - [Thư viện] `WebServer`: Khởi tạo máy chủ HTTP tại cổng 80 để lắng nghe lệnh từ Python.
-  - [Thư viện] `HardwareSerial`: Quản lý giao tiếp nối tiếp UART2 (RX=16, TX=17) để nói chuyện với Mạch 1.
-  - [Thư viện] `LiquidCrystal_I2C` & `Wire`: Giao tiếp màn hình LCD qua bus I2C.
-  - [Hàm] `setup()`: Khởi tạo WiFi, LCD, thiết lập các Route API (`/open_gate`, `/close_gate`).
-  - [Hàm] `loop()`: Duy trì `server.handleClient()` và kiểm tra tín hiệu UART gửi từ Mạch 1.
-  - [Hàm] `handleOpenGate()`: Endpoint API, khi Python gọi tới sẽ gửi cờ (flag) qua UART bắt Mạch 1 mở cổng.
-  - [Hàm] `printLCD()`: Hàm tiện ích giúp in chuỗi ký tự lên màn hình LCD dễ dàng.
++ Module ESP32 Gateway (`IOT_2.ino`)
+  - [Thư viện] `WiFi`: Quản trị kết nối mạng LAN không dây (Hỗ trợ xin cấp phát IP động DHCP từ Router).
+  - [Thư viện] `WebServer`: Khởi tạo máy chủ HTTP thu nhỏ trên cổng 80, thiết lập các Endpoint API cục bộ.
+  - [Thư viện] `HardwareSerial`: Khởi tạo cổng Nối tiếp ảo UART2 (Chân RX 16, TX 17) chuyên dùng để giao tiếp chéo với Mạch 1 (Baudrate 9600).
+  - [Thư viện] `LiquidCrystal_I2C`: Điều khiển màn hình LCD hiển thị trạng thái IP mạng thông qua bus I2C (SDA/SCL).
+  - [Hàm] `handleOpenGate()`: Hàm Endpoint. Khi máy chủ Python gọi tới đường dẫn API `/open_gate`, hàm này sẽ lập tức truyền cờ lệnh (Flag) qua UART để "kêu gọi" Mạch 1 mở cổng.
 
-### 7.2. Luồng Máy chủ Backend (Python Server Workflow)
+### 7.2. Khối Máy chủ Backend (Python Flask Server)
++ Module Điều phối Trung tâm (`server.py`)
+  - [Thư viện] `flask`: Micro-framework dựng máy chủ Web siêu nhẹ.
+  - [Hàm] `capture_only()`: Hàm Route chính. Liên kết chuỗi sự kiện: Mạch 2 báo tín hiệu -> Gọi `camera.py` lấy ảnh -> Gọi `ai.py` nhận diện -> Gọi `db.py` lưu trữ -> Phản hồi lệnh HTTP xuống Mạch 2 mở cổng.
 
-+ Lõi Máy chủ Web (`server.py`)
-  - [Thư viện] `flask`: Framework siêu nhẹ để tạo Web UI quản lý bãi xe và cung cấp API nội bộ.
-  - [Thư viện] `json`, `os`: Đọc ghi file cấu hình hệ thống (`config.json`).
-  - [Hàm] `index()`: Render giao diện trang chủ Bảng điều khiển (Dashboard).
-  - [Hàm] `capture_only()`: Hàm kích hoạt luồng ALPR (Gọi Camera chụp ảnh -> Gọi AI nhận diện -> Gọi DB lưu trữ -> Gửi HTTP Request sang Mạch 2 mở cổng).
-  - [Hàm] `history()`: Trả về dữ liệu JSON lịch sử xe ra vào cho Web UI vẽ bảng.
++ Module Xử lý Hình ảnh (`camera.py`)
+  - [Thư viện] `urllib.request`: Gửi gói tin HTTP thô không đính kèm Header, ép Camera IP nhả ảnh tĩnh ngay lập tức với độ trễ < 0.1s.
+  - [Thư viện] `numpy` & `cv2`: Giải mã mảng byte JPEG truyền về thành ma trận đa chiều OpenCV để có thể xử lý (VD: Cắt xén, lọc màu) trước khi ném cho AI.
+  - [Hàm] `fetch_image()`: Hàm lõi thực thi lấy ảnh. Bắt mọi ngoại lệ (Exception Timeout) để đảm bảo Server không bao giờ bị Crash nếu Camera điện thoại rớt mạng.
 
-+ Trình điều khiển Camera (`camera.py`)
-  - [Thư viện] `urllib.request`: Thư viện mạng cấp thấp, dùng để bắn gói tin cực nhẹ ép IP Webcam nhả ảnh tức thì (<0.1s).
-  - [Thư viện] `numpy`: Chuyển đổi luồng byte ảnh tải về thành ma trận mảng đa chiều.
-  - [Thư viện] `cv2` (OpenCV): Giải mã ma trận NumPy thành khung hình ảnh (Image Frame) để thao tác.
-  - [Hàm] `set_url()`: Tự động chuẩn hóa địa chỉ IP Webcam (thêm `http://` và `/shot.jpg`).
-  - [Hàm] `fetch_image()`: Gửi HTTP GET tốc độ cao để lấy 1 khung hình tĩnh mới nhất từ điện thoại.
++ Module Trí tuệ Nhân tạo (`ai.py`)
+  - [Thư viện] `google.generativeai`: Bộ công cụ lập trình (SDK) giao tiếp đám mây với lõi Google Gemini Vision Pro.
+  - [Thư viện] `re`: Bộ xử lý Regular Expression (Biểu thức chính quy).
+  - [Hàm] `analyze_image_for_license_plate()`: Tiền xử lý ảnh JPEG, nhúng Prompt kỹ thuật và gọi hàm sinh JSON.
+  - [Hàm] `parse_gemini_response()`: Cạo dữ liệu (Data Scraping) bằng biểu thức chính quy. Dọn dẹp hoàn toàn các đoạn văn bản rườm rà của AI, bóc tách chính xác chuỗi JSON chứa giá trị "Biển số xe".
 
-+ Trí tuệ Nhân tạo ALPR (`ai.py`)
-  - [Thư viện] `google.generativeai`: Thư viện SDK chính thức kết nối với Google Gemini Vision Pro.
-  - [Thư viện] `re` (Regular Expression): Bộ lọc biểu thức chính quy để làm sạch dữ liệu.
-  - [Hàm] `analyze_image_for_license_plate()`: Đóng gói ảnh JPEG, xây dựng Prompt ngữ cảnh và gửi lên Cloud AI.
-  - [Hàm] `parse_gemini_response()`: Dùng Regex cắt bỏ các câu trả lời thừa của AI, chỉ giữ lại đúng chuỗi JSON chứa Biển số xe.
-
-+ Quản lý Cơ sở dữ liệu (`db.py`)
-  - [Thư viện] `sqlite3`: Thư viện cơ sở dữ liệu quan hệ gọn nhẹ (SQL), lưu trực tiếp thành file nội bộ.
-  - [Thư viện] `datetime`: Lấy mốc thời gian thực khi xe qua cổng.
-  - [Hàm] `init_db()`: Tạo bảng `history` nếu chưa tồn tại (gồm ID, Thời gian, Biển số, Tên file ảnh).
-  - [Hàm] `add_record()`: Truy vấn `INSERT INTO` để lưu lịch sử mới.
-  - [Hàm] `get_history()`: Truy vấn `SELECT` để xuất danh sách lịch sử phục vụ Web UI.
++ Module Cơ sở Dữ liệu (`db.py`)
+  - [Thư viện] `sqlite3`: Hệ quản trị CSDL quan hệ siêu nhẹ, không cần cài đặt Server SQL cồng kềnh, lưu trữ mọi lịch sử ra/vào thẳng vào 1 tệp tĩnh (`history.db`).
+  - [Hàm] `init_db()`: Khởi tạo cấu trúc bảng (Table) ban đầu (Gồm: ID, Ngày giờ, Biển số, Đường dẫn file ảnh).
+  - [Hàm] `add_record()` / `get_history()`: Thực thi các lệnh SQL tĩnh (INSERT, SELECT) để lưu xe mới và xuất dữ liệu báo cáo ra Web UI.
 
 ## 8. Kết quả đạt được của dự án (Current Achievements)
 Tính đến thời điểm hiện tại, dự án đã hoàn thành và nghiệm thu thành công các hạng mục cốt lõi, bao phủ từ phần cứng tới phần mềm:
