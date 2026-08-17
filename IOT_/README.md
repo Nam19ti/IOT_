@@ -105,3 +105,57 @@ Dự án được phân chia thành 2 hệ thống cốt lõi: Mạng lưới Ph
 + `templates/` & `static/`
   - Thư mục chứa giao diện Front-End của Web UI (Mã HTML, CSS, JavaScript).
   - Giao diện được thiết kế tương thích với bảo vệ thao tác trên máy tính bảng hoặc laptop.
+
+## 8. Danh sách Thư viện và Hàm sử dụng (Libraries & Functions Tree)
+
+Để dễ dàng nắm bắt, toàn bộ thư viện và hàm được phân nhóm theo Luồng công việc (Workflow) và mô tả dưới dạng cấu trúc cây (Tree).
+
+### 8.1. Luồng Phần cứng (Hardware Workflow)
+
++ Mạch 1: ESP32 Master Logic (`IOT.ino`)
+  - [Thư viện] `ESP32Servo`: Điều khiển góc quay chính xác cho động cơ Barie.
+  - [Hàm] `setup()`: Khởi tạo chân GPIO, gắn ngắt (Interrupt) cho nút bấm.
+  - [Hàm] `loop()`: Vòng lặp chính, liên tục gọi hàm đo khoảng cách và đọc tín hiệu UART.
+  - [Hàm] `measureDistance()`: Phát xung `TRIG` và tính toán thời gian `ECHO` để ra khoảng cách (cm).
+  - [Hàm] `handleButtonInterrupt()`: Hàm ngắt (Interrupt) dùng `IRAM_ATTR` xử lý tín hiệu nhấn nút tức thời (kèm thuật toán Debounce 500ms).
+  - [Hàm] `openGate()`, `closeGate()`: Ghi góc 90 độ / 0 độ cho Servo.
+  - [Hàm] `buzzerAlert()`: Nhại còi bíp bíp cảnh báo xe đang di chuyển.
+
++ Mạch 2: ESP32 WiFi & LAN Slave (`IOT_2.ino`)
+  - [Thư viện] `WiFi`: Quản lý kết nối mạng LAN/Internet qua giao thức DHCP.
+  - [Thư viện] `WebServer`: Khởi tạo máy chủ HTTP tại cổng 80 để lắng nghe lệnh từ Python.
+  - [Thư viện] `HardwareSerial`: Quản lý giao tiếp nối tiếp UART2 (RX=16, TX=17) để nói chuyện với Mạch 1.
+  - [Thư viện] `LiquidCrystal_I2C` & `Wire`: Giao tiếp màn hình LCD qua bus I2C.
+  - [Hàm] `setup()`: Khởi tạo WiFi, LCD, thiết lập các Route API (`/open_gate`, `/close_gate`).
+  - [Hàm] `loop()`: Duy trì `server.handleClient()` và kiểm tra tín hiệu UART gửi từ Mạch 1.
+  - [Hàm] `handleOpenGate()`: Endpoint API, khi Python gọi tới sẽ gửi cờ (flag) qua UART bắt Mạch 1 mở cổng.
+  - [Hàm] `printLCD()`: Hàm tiện ích giúp in chuỗi ký tự lên màn hình LCD dễ dàng.
+
+### 8.2. Luồng Máy chủ Backend (Python Server Workflow)
+
++ Lõi Máy chủ Web (`server.py`)
+  - [Thư viện] `flask`: Framework siêu nhẹ để tạo Web UI quản lý bãi xe và cung cấp API nội bộ.
+  - [Thư viện] `json`, `os`: Đọc ghi file cấu hình hệ thống (`config.json`).
+  - [Hàm] `index()`: Render giao diện trang chủ Bảng điều khiển (Dashboard).
+  - [Hàm] `capture_only()`: Hàm kích hoạt luồng ALPR (Gọi Camera chụp ảnh -> Gọi AI nhận diện -> Gọi DB lưu trữ -> Gửi HTTP Request sang Mạch 2 mở cổng).
+  - [Hàm] `history()`: Trả về dữ liệu JSON lịch sử xe ra vào cho Web UI vẽ bảng.
+
++ Trình điều khiển Camera (`camera.py`)
+  - [Thư viện] `urllib.request`: Thư viện mạng cấp thấp, dùng để bắn gói tin cực nhẹ ép IP Webcam nhả ảnh tức thì (<0.1s).
+  - [Thư viện] `numpy`: Chuyển đổi luồng byte ảnh tải về thành ma trận mảng đa chiều.
+  - [Thư viện] `cv2` (OpenCV): Giải mã ma trận NumPy thành khung hình ảnh (Image Frame) để thao tác.
+  - [Hàm] `set_url()`: Tự động chuẩn hóa địa chỉ IP Webcam (thêm `http://` và `/shot.jpg`).
+  - [Hàm] `fetch_image()`: Gửi HTTP GET tốc độ cao để lấy 1 khung hình tĩnh mới nhất từ điện thoại.
+
++ Trí tuệ Nhân tạo ALPR (`ai.py`)
+  - [Thư viện] `google.generativeai`: Thư viện SDK chính thức kết nối với Google Gemini Vision Pro.
+  - [Thư viện] `re` (Regular Expression): Bộ lọc biểu thức chính quy để làm sạch dữ liệu.
+  - [Hàm] `analyze_image_for_license_plate()`: Đóng gói ảnh JPEG, xây dựng Prompt ngữ cảnh và gửi lên Cloud AI.
+  - [Hàm] `parse_gemini_response()`: Dùng Regex cắt bỏ các câu trả lời thừa của AI, chỉ giữ lại đúng chuỗi JSON chứa Biển số xe.
+
++ Quản lý Cơ sở dữ liệu (`db.py`)
+  - [Thư viện] `sqlite3`: Thư viện cơ sở dữ liệu quan hệ gọn nhẹ (SQL), lưu trực tiếp thành file nội bộ.
+  - [Thư viện] `datetime`: Lấy mốc thời gian thực khi xe qua cổng.
+  - [Hàm] `init_db()`: Tạo bảng `history` nếu chưa tồn tại (gồm ID, Thời gian, Biển số, Tên file ảnh).
+  - [Hàm] `add_record()`: Truy vấn `INSERT INTO` để lưu lịch sử mới.
+  - [Hàm] `get_history()`: Truy vấn `SELECT` để xuất danh sách lịch sử phục vụ Web UI.
