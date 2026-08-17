@@ -1,11 +1,11 @@
-# NGHIÊN CỨU: HỆ THỐNG NHẬN DIỆN BIỂN SỐ VÀ QUẢN LÝ BÃI ĐỖ XE TỰ ĐỘNG (ALPR SMART PARKING)
+# DỰ ÁN: HỆ THỐNG NHẬN DIỆN BIỂN SỐ VÀ QUẢN LÝ BÃI ĐỖ XE TỰ ĐỘNG (ALPR SMART PARKING)
 
-## 1. Vấn đề nghiên cứu (Problem Statement)
+## 1. Vấn đề của dự án (Problem Statement)
 + Thực trạng hiện nay: Tại các khu dân cư, cơ quan hay bãi đỗ xe truyền thống, việc kiểm soát xe ra vào vẫn chủ yếu dựa vào sức người (bảo vệ ghi vé giấy, quẹt thẻ thủ công). Phương pháp này bộc lộ nhiều hạn chế như: tốn kém chi phí thuê nhân sự trực 24/24, dễ xảy ra sai sót hoặc gian lận, làm mất vé xe, và đặc biệt là gây ùn tắc giao thông cục bộ tại khu vực cổng vào những khung giờ cao điểm (giờ đi làm, giờ tan tầm).
 + Rào cản công nghệ: Mặc dù các hệ thống nhận diện biển số tự động (ALPR - Automated License Plate Recognition) đã có mặt trên thị trường để giải quyết bài toán trên, nhưng chúng lại gặp một rào cản rất lớn về mặt chi phí. Một hệ thống ALPR tiêu chuẩn yêu cầu phải có Camera IP chuyên dụng đắt tiền (vài triệu đến hàng chục triệu đồng), một Máy chủ (Server) cục bộ tích hợp Card đồ họa (GPU) cấu hình cực mạnh để chạy các mô hình AI nặng nề, cùng với chi phí bảo trì và bản quyền phần mềm đắt đỏ.
 + Giải pháp đề xuất: Từ những bất cập trên, dự án này được ra đời nhằm mục đích "bình dân hóa" công nghệ bãi đỗ xe thông minh. Thay vì sử dụng thiết bị đắt tiền, dự án sử dụng Camera từ những chiếc Điện thoại thông minh (Smartphone) Android cũ đã qua sử dụng, kết hợp với các vi điều khiển giá siêu rẻ ESP32 (chỉ khoảng vài chục nghìn đồng). Đặc biệt, thay vì dùng máy chủ cấu hình cao, dự án đẩy khâu phân tích hình ảnh nặng nề lên Trí tuệ nhân tạo đám mây (Google Gemini Vision API) hoàn toàn miễn phí. Sự kết hợp này tạo ra một hệ thống tự động 100%: Tự động phát hiện xe đến -> Tự động chụp ảnh -> Tự động đọc biển số -> Tự động mở cổng, với chi phí đầu tư ban đầu tiệm cận mức 0 đồng.
 
-## 2. Đối tượng nghiên cứu (Research Objects)
+## 2. Đối tượng của dự án (Project Objects)
 Để hiện thực hóa giải pháp trên, dự án tập trung nghiên cứu sâu vào 4 nhóm đối tượng công nghệ cốt lõi:
 
 + Nhóm 1: Hệ thống Vi điều khiển (Microcontrollers)
@@ -25,16 +25,22 @@
   - Nghiên cứu chuẩn giao tiếp bất đồng bộ UART2 (Universal Asynchronous Receiver-Transmitter) để kết nối vật lý chéo chân TX/RX giữa 2 bo mạch ESP32.
   - Thiết lập cơ chế truyền nhận tín hiệu (Signal Flags) ổn định, giúp Mạch 2 (đang giữ kết nối WiFi) truyền đạt ngay lập tức lệnh Mở/Đóng cổng sang Mạch 1 (chuyên trách cơ điện) mà không sợ bị rớt gói tin như khi gửi qua sóng WiFi.
 
-## 3. Cách thức thực hiện (Methodology)
-Dự án được phân chia thành 2 hệ thống cốt lõi: Mạng lưới Phần cứng (Hardware Node) và Máy chủ Xử lý Trung tâm (Central Server).
+## 3. Cách thức thực hiện (Implementation Methodology)
+Để giải quyết bài toán trên, dự án được triển khai theo mô hình phân tán (Decentralized Model), chia nhỏ hệ thống thành 3 thành phần (Node) hoạt động độc lập nhưng liên kết chặt chẽ với nhau:
 
-- Phân tán phần cứng (Hardware Decentralization): 
-  - Thay vì gộp chung, dự án sử dụng 2 mạch ESP32 riêng biệt nhằm đảm bảo hiệu năng. Mạch 1 chuyên trách xử lý ngắt cảm biến và động cơ (tránh giật lag). Mạch 2 chuyên trách duy trì kết nối WiFi và xử lý các luồng gọi API HTTP. Hai mạch giao tiếp qua giao thức UART2.
-- Kiến trúc Máy chủ và AI (Server & AI Architecture):
-  - Một máy tính (hoặc Raspberry Pi) đóng vai trò làm Server cục bộ (chạy Python/Flask). 
-  - Điện thoại thông minh Android (cài IP Webcam) đóng vai trò như một IP Camera không dây giám sát cổng.
-  - Khi có sự kiện xe vào, Server sẽ yêu cầu Camera chụp ảnh (tối ưu hóa bỏ qua Header để đạt tốc độ <0.1s), sau đó gửi ảnh lên Google Gemini API.
-  - Dữ liệu kết quả được lọc nhiễu bằng Regular Expression (Regex), lưu vào Cơ sở dữ liệu SQLite và cập nhật thời gian thực lên giao diện Web điều khiển.
++ Nút Phần cứng Chấp hành (Hardware Execution Node - ESP32 Mạch 1)
+  - Vai trò: Đóng vai trò là "Cơ bắp" của hệ thống, trực tiếp tương tác với môi trường vật lý.
+  - Triển khai: Lập trình bằng C++ trên bo mạch ESP32. Cấu hình 2 cảm biến siêu âm HC-SR04 đặt ở lối vào và dưới barie. Áp dụng thuật toán phát hiện vật cản kết hợp biến cờ (Flag) `carAtGate` để thiết lập tính năng an toàn Zero-Crash (tuyệt đối không đóng cổng khi xe đang nằm dưới barie). Cấu hình xuất xung PWM chuẩn xác để điều khiển góc quay Servo mượt mà.
+
++ Nút Trung chuyển Mạng (Network Gateway Node - ESP32 Mạch 2)
+  - Vai trò: Đóng vai trò là "Trạm thu phát sóng" nối liền phần cứng vật lý với hệ thống mạng LAN.
+  - Triển khai: Khởi tạo module WiFi kết nối vào mạng nội bộ bằng giao thức cấu hình IP Động (DHCP). Khởi tạo thư viện `WebServer` chạy ở cổng 80, thiết lập các Endpoint API (ví dụ: `http://<IP>/open_gate`). Khi nhận được lệnh HTTP GET từ máy chủ Python, mạch này lập tức kích hoạt giao thức nối tiếp UART (qua cặp chân TX2/RX2) để truyền tín hiệu điều khiển sang Mạch 1 một cách tức thời và bảo mật.
+
++ Nút Máy chủ Điều khiển & Trí tuệ Nhân tạo (Central Server & AI Node - Python)
+  - Vai trò: Đóng vai trò là "Bộ não" trung tâm điều phối toàn bộ chu trình tự động hóa.
+  - Triển khai thu thập hình ảnh: Xây dựng module `camera.py` liên tục quét luồng ảnh tĩnh từ điện thoại Android thông qua thư viện `urllib` tối ưu tốc độ băng thông.
+  - Triển khai phân tích AI: Xây dựng module `ai.py` băm nhỏ hình ảnh thành byte và gửi API lên mô hình Google Gemini. Thiết lập bộ lọc Regular Expression (Regex) để trích xuất duy nhất chuỗi ký tự biển số từ khối văn bản lộn xộn do AI trả về.
+  - Triển khai lưu trữ & Web UI: Sử dụng thư viện `sqlite3` để ghi nhận mốc thời gian (Timestamp) và biển số xe vào CSDL nội bộ `history.db`. Dựng framework `Flask` tạo giao diện Web Dashboard trực quan, cho phép nhân viên bảo vệ xem lại lịch sử ra vào và nhấn nút mở cổng khẩn cấp ngay trên màn hình.
 
 ## 4. Tiến độ dự án / Dự án làm được đến đâu (Current Achievements)
 + Hoàn thiện phần cứng phần cơ điện: Đọc tín hiệu cảm biến siêu âm chính xác, điều khiển Servo mượt mà, thiết lập nút bấm cứng và còi báo hiệu chống kẹt xe.
