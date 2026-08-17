@@ -60,6 +60,9 @@ unsigned long lastCarOutTime = 0;
 // Biến lưu thời gian gửi báo cáo khoảng cách qua Serial/UART định kỳ
 unsigned long lastDistanceReport = 0;
 
+// Biến lưu thời điểm Cảm biến 2 (Lối ra) trống trải (không có xe)
+unsigned long lastS2ClearTime = 0;
+
 // =========================================================
 // CÁC HÀM CƠ BẢN
 // =========================================================
@@ -301,21 +304,31 @@ void loop() {
     Serial2.printf("DIST:%.1f,%.1f\n", d1, d2);
   }
   
+  // --- Logic xe đi RA / NẰM DƯỚI CỔNG (Qua Cảm biến 2) ---
+  bool trigger2 = (d2 < 20.0) || (baseline2 - d2 > THRESHOLD);
+  
+  // Cập nhật liên tục mốc thời gian nếu S2 đang có xe
+  if (trigger2) {
+    lastS2ClearTime = millis();
+  }
+
   // --- Logic xe đi VÀO (Qua Cảm biến 1) ---
   // trigger1 là cờ báo có xe khi khoảng cách nhỏ hơn 20cm, HOẶC sụt giảm > ngưỡng 20cm so với nền
   bool trigger1 = (d1 < 20.0) || (baseline1 - d1 > THRESHOLD);
   
-  // Điều kiện: Có xe che (trigger1), hệ thống chưa có xe trong trạm (!carInside) và xe trước đó đã vào quá 5 giây (chống nhiễu nhấp nháy)
-  if (trigger1 && !carInside && millis() - lastCarInTime > 5000) {
+  // Điều kiện: 
+  // 1. Có xe che (trigger1)
+  // 2. Hệ thống chưa có xe trong trạm (!carInside)
+  // 3. Xe trước đó đã vào quá 5 giây (chống nhiễu nhấp nháy)
+  // 4. (MỚI) Cảm biến 2 đã hoàn toàn TRỐNG trải ít nhất 2 giây (Chống chụp ảnh khi xe trước chưa qua hẳn)
+  if (trigger1 && !carInside && (millis() - lastCarInTime > 5000) && (millis() - lastS2ClearTime > 2000)) {
     carInside = true; // Xác nhận có xe đang đi vào
     lastCarInTime = millis();
     Serial.println(">> [SENS] XE VAO TRAM!");
     Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2 để xử lý logic (như quẹt thẻ, đếm xe)
   }
   
-  // --- Logic xe đi RA / NẰM DƯỚI CỔNG (Qua Cảm biến 2) ---
-  bool trigger2 = (d2 < 20.0) || (baseline2 - d2 > THRESHOLD);
-  
+  // Phần xử lý đóng cổng với Cảm biến 2
   if (trigger2 && carInside) {
     // Xe bắt đầu tiến sâu vào và chắn ngang Cảm biến 2 (Đang nằm ngay dưới thanh chắn Barie)
     if (!carAtGate) {
