@@ -6,10 +6,24 @@
 + Giải pháp đề xuất: Từ những bất cập trên, dự án này được ra đời nhằm mục đích "bình dân hóa" công nghệ bãi đỗ xe thông minh. Thay vì sử dụng thiết bị đắt tiền, dự án sử dụng Camera từ những chiếc Điện thoại thông minh (Smartphone) Android cũ đã qua sử dụng, kết hợp với các vi điều khiển giá siêu rẻ ESP32 (chỉ khoảng vài chục nghìn đồng). Đặc biệt, thay vì dùng máy chủ cấu hình cao, dự án đẩy khâu phân tích hình ảnh nặng nề lên Trí tuệ nhân tạo đám mây (Google Gemini Vision API) hoàn toàn miễn phí. Sự kết hợp này tạo ra một hệ thống tự động 100%: Tự động phát hiện xe đến -> Tự động chụp ảnh -> Tự động đọc biển số -> Tự động mở cổng, với chi phí đầu tư ban đầu tiệm cận mức 0 đồng.
 
 ## 2. Đối tượng nghiên cứu (Research Objects)
-+ Hệ thống Vi điều khiển (Microcontrollers): ESP32 được sử dụng làm lõi xử lý phần cứng, giao tiếp cảm biến và điều khiển cơ cấu chấp hành (Servo).
-+ Công nghệ Thị giác Máy tính đám mây (Cloud Computer Vision): Ứng dụng mô hình ngôn ngữ lớn và thị giác (Google Gemini Vision Pro API) để trích xuất biển số xe từ hình ảnh tĩnh mà không cần GPU cục bộ.
-+ Giao thức Mạng (Network Protocols): Giao tiếp không dây qua HTTP GET/POST trong mạng LAN, cấp phát IP động (DHCP), truyền dữ liệu siêu tốc bằng `urllib` và luồng video IP Webcam.
-+ Giao thức Giao tiếp Nối tiếp (Serial Communication): Truyền tải dữ liệu bất đồng bộ UART giữa các vi điều khiển để phân tán tác vụ xử lý.
+Để hiện thực hóa giải pháp trên, dự án tập trung nghiên cứu sâu vào 4 nhóm đối tượng công nghệ cốt lõi:
+
++ Nhóm 1: Hệ thống Vi điều khiển (Microcontrollers)
+  - Nghiên cứu nền tảng vi điều khiển ESP32 (chip lõi kép 32-bit, tích hợp sẵn Wi-Fi).
+  - Phân tích phương pháp phân tán tác vụ phần cứng (Hardware Decentralization): Sử dụng 2 mạch ESP32 chạy độc lập thay vì nhồi nhét vào 1 mạch duy nhất để tránh treo hệ thống. Mạch 1 chuyên giao tiếp với "thế giới thực" (đọc cảm biến siêu âm chống sập cần barie, nhại còi, điều khiển góc quay Servo). Mạch 2 chuyên lo duy trì kết nối mạng LAN và cấp phát WebServer API.
+
++ Nhóm 2: Công nghệ Thị giác Máy tính Đám mây (Cloud Computer Vision)
+  - Nghiên cứu ứng dụng Mô hình Trí tuệ Nhân tạo Đa phương thức (Multimodal AI) - cụ thể là Google Gemini Vision API vào bài toán nhận diện ký tự quang học (OCR).
+  - Khảo sát cách thức đóng gói hình ảnh thành mảng byte, thiết lập câu lệnh ngữ cảnh (Prompt Engineering) để AI tập trung trích xuất đúng biển số xe thành định dạng JSON, loại bỏ hoàn toàn các thông tin rác xung quanh môi trường đỗ xe.
+
++ Nhóm 3: Giao thức Mạng và Tối ưu hóa Truyền tải (Network Protocols)
+  - Nghiên cứu thiết lập máy chủ trung tâm (Flask Python) làm đầu não điều phối toàn bộ luồng thông tin.
+  - Tối ưu hóa luồng trích xuất hình ảnh: Thay vì dùng luồng video nặng nề, dự án nghiên cứu giao thức gửi gói tin HTTP cấp thấp (`urllib` lược bỏ toàn bộ Header trình duyệt) để ép IP Camera trên điện thoại nhả ảnh tĩnh (Snapshot) ngay lập tức, đưa độ trễ từ 2.5s xuống mức Tức thì (<0.1s).
+  - Tích hợp cấp phát IP Động (DHCP) giúp hệ thống linh hoạt thích ứng với mọi modem mạng mà không bị bó buộc vào 1 dải mạng cố định.
+
++ Nhóm 4: Giao tiếp Nối tiếp (Serial Communication)
+  - Nghiên cứu chuẩn giao tiếp bất đồng bộ UART2 (Universal Asynchronous Receiver-Transmitter) để kết nối vật lý chéo chân TX/RX giữa 2 bo mạch ESP32.
+  - Thiết lập cơ chế truyền nhận tín hiệu (Signal Flags) ổn định, giúp Mạch 2 (đang giữ kết nối WiFi) truyền đạt ngay lập tức lệnh Mở/Đóng cổng sang Mạch 1 (chuyên trách cơ điện) mà không sợ bị rớt gói tin như khi gửi qua sóng WiFi.
 
 ## 3. Cách thức thực hiện (Methodology)
 Dự án được phân chia thành 2 hệ thống cốt lõi: Mạng lưới Phần cứng (Hardware Node) và Máy chủ Xử lý Trung tâm (Central Server).
