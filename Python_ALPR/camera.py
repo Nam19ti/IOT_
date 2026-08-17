@@ -61,45 +61,41 @@ class CameraClient:
             if not self.url.endswith("/photo.jpg"):
                 candidate_urls.append(base_url + "/photo.jpg")
 
+        # --- CÁCH 1: Nhanh nhất (urllib không có header) ---
+        # Cách này trước đây chạy tức thì (instant) do gửi request cực nhẹ
+        for target_url in candidate_urls:
+            try:
+                req = urllib.request.urlopen(target_url, timeout=2.5)
+                arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
+                img = cv2.imdecode(arr, -1)
+                
+                if img is not None and img.size > 0:
+                    if target_url != self.url:
+                        self.url = target_url
+                    return img
+            except Exception as e:
+                p(f"[CAMERA LỖI CÁCH 1 - NHANH] {target_url}: {e}")
+
+        # --- CÁCH 2: Chậm hơn (dùng requests có header) ---
+        # Dành cho các dòng điện thoại chặn request không có User-Agent
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "User-Agent": "Mozilla/5.0",
             "Connection": "close"
         }
-
-        # Bỏ qua proxy hệ thống để tránh lỗi định tuyến mạng LAN
         proxies = {"http": None, "https": None}
 
         for target_url in candidate_urls:
-            # 1. Thử lấy ảnh bằng thư viện `requests` kèm User-Agent giả lập Trình Duyệt
             try:
-                r = requests.get(target_url, headers=headers, proxies=proxies, timeout=10.0)
+                r = requests.get(target_url, headers=headers, proxies=proxies, timeout=5.0)
                 if r.status_code == 200 and r.content:
                     arr = np.asarray(bytearray(r.content), dtype=np.uint8)
                     img = cv2.imdecode(arr, -1)
                     if img is not None and img.size > 0:
                         if target_url != self.url:
-                            p(f"[CAMERA] Đã tự động kết nối thành công qua đường dẫn: {target_url}")
                             self.url = target_url
                         return img
-                else:
-                    p(f"[CAMERA KHÔNG TẢI ĐƯỢC HTTP {r.status_code}]: {target_url}")
             except Exception as e:
-                p(f"[CAMERA THỬ LỖI {target_url}]: {e}")
-
-            # 2. Fallback bằng urllib
-            try:
-                # urllib không có tham số proxy riêng, nhưng timeout 10.0s sẽ giúp tránh đứt gãy
-                req = urllib.request.Request(target_url, headers=headers)
-                with urllib.request.urlopen(req, timeout=10.0) as resp:
-                    arr = np.asarray(bytearray(resp.read()), dtype=np.uint8)
-                    img = cv2.imdecode(arr, -1)
-                    if img is not None and img.size > 0:
-                        if target_url != self.url:
-                            self.url = target_url
-                        return img
-            except Exception:
-                pass
+                p(f"[CAMERA LỖI CÁCH 2 - DỰ PHÒNG] {target_url}: {e}")
 
         # 3. Fallback bằng OpenCV VideoCapture nếu là luồng stream video (rtsp/mjpg)
         if "rtsp://" in self.url or ".mjpg" in self.url or ".mp4" in self.url:
