@@ -61,43 +61,28 @@ class CameraClient:
             if not self.url.endswith("/photo.jpg"):
                 candidate_urls.append(base_url + "/photo.jpg")
 
-        # --- CÁCH 1: Nhanh nhất (urllib không có header) ---
-        # Cách này trước đây chạy tức thì (instant) do gửi request cực nhẹ
-        for target_url in candidate_urls:
-            try:
-                req = urllib.request.urlopen(target_url, timeout=2.5)
-                arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
-                img = cv2.imdecode(arr, -1)
-                
-                if img is not None and img.size > 0:
-                    if target_url != self.url:
-                        self.url = target_url
-                    return img
-            except Exception as e:
-                p(f"[CAMERA LỖI CÁCH 1 - NHANH] {target_url}: {e}")
-
-        # --- CÁCH 2: Chậm hơn (dùng requests có header) ---
-        # Dành cho các dòng điện thoại chặn request không có User-Agent
         headers = {
             "User-Agent": "Mozilla/5.0",
             "Connection": "close"
         }
-        proxies = {"http": None, "https": None}
 
+        # Dùng duy nhất urllib với Header nhẹ nhàng để tránh bị Android 11+ chặn, đồng thời không bị overhead như thư viện requests.
         for target_url in candidate_urls:
             try:
-                r = requests.get(target_url, headers=headers, proxies=proxies, timeout=5.0)
-                if r.status_code == 200 and r.content:
-                    arr = np.asarray(bytearray(r.content), dtype=np.uint8)
+                req = urllib.request.Request(target_url, headers=headers)
+                # Timeout 5s để đảm bảo không bị sập, nhưng do có header chuẩn nên sẽ phản hồi ngay lập tức (~0.1s)
+                with urllib.request.urlopen(req, timeout=5.0) as resp:
+                    arr = np.asarray(bytearray(resp.read()), dtype=np.uint8)
                     img = cv2.imdecode(arr, -1)
+                    
                     if img is not None and img.size > 0:
                         if target_url != self.url:
                             self.url = target_url
                         return img
             except Exception as e:
-                p(f"[CAMERA LỖI CÁCH 2 - DỰ PHÒNG] {target_url}: {e}")
+                p(f"[CAMERA LỖI KẾT NỐI] {target_url}: {e}")
 
-        # 3. Fallback bằng OpenCV VideoCapture nếu là luồng stream video (rtsp/mjpg)
+        # Fallback bằng OpenCV VideoCapture nếu là luồng stream video (rtsp/mjpg)
         if "rtsp://" in self.url or ".mjpg" in self.url or ".mp4" in self.url:
             try:
                 cap = cv2.VideoCapture(self.url)
