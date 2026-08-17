@@ -57,22 +57,22 @@ graph TD
         Buzzer["Còi báo động"]
         Btn["Nút bấm Mở/Đóng"]
         
-        ESP1 -- "GPIO 13 / 12" --- SR04_1
-        ESP1 -- "GPIO 5 / 18" --- SR04_2
-        ESP1 -- "GPIO 4 (PWM)" --- Servo
-        ESP1 -- "GPIO 14" --- Buzzer
-        ESP1 -- "GPIO 26" --- Btn
+        ESP1 ---|"GPIO 13 / 12"| SR04_1
+        ESP1 ---|"GPIO 5 / 18"| SR04_2
+        ESP1 ---|"GPIO 4 (PWM)"| Servo
+        ESP1 ---|"GPIO 14"| Buzzer
+        ESP1 ---|"GPIO 26"| Btn
     end
 
     subgraph SG2 ["Mạch 2: ESP32 Network Gateway (WiFi)"]
         ESP2["ESP32_2"]
         LCD["Màn hình LCD I2C"]
         
-        ESP2 -- "SDA / SCL" --- LCD
+        ESP2 ---|"SDA / SCL"| LCD
     end
 
-    ESP1 <--"UART2 (Chân 16-17)"--> ESP2
-    ESP1 -.- "Nối chung GND" -.- ESP2
+    ESP1 <-->|"UART2 (Chân 16-17)"| ESP2
+    ESP1 -.-|"Nối chung GND"| ESP2
 ```
 
 + Chi tiết sơ đồ chân Mạch 1 (ESP32 Master Logic):
