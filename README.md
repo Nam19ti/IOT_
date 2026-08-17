@@ -67,35 +67,70 @@ Tính đến thời điểm hiện tại, dự án đã hoàn thành và nghiệ
 
 ## 5. Sơ đồ đấu nối và Hướng dẫn cài đặt (Wiring Diagram & Installation Guide)
 
-### 5.1. Sơ đồ đấu nối phần cứng
-- Mạch 1 (ESP32 - Master Hardware Logic):
-  - Chân 13 (Trig), 12 (Echo) --> Cảm biến siêu âm 1 (Nhận diện xe đi vào vùng cổng)
-  - Chân 5 (Trig), 18 (Echo) --> Cảm biến siêu âm 2 (Nhận diện xe đã qua barie để đóng cổng an toàn)
-  - Chân 4 --> Chân tín hiệu Động cơ Servo (Điều khiển thanh chắn Barie)
-  - Chân 14 --> Còi chip (Buzzer - Phát tín hiệu tít tít khi đóng/mở)
-  - Chân 26 --> Nút bấm cơ học (Mở/đóng cổng thủ công từ bốt bảo vệ)
-  - Chân 16 (RX2), 17 (TX2) --> Giao tiếp UART chéo sang Mạch 2
+### 5.1. Sơ đồ đấu nối phần cứng (Hardware Wiring)
+Dự án sử dụng 2 bo mạch ESP32 giao tiếp với nhau. Để hệ thống hoạt động ổn định, 2 bo mạch bắt buộc phải dùng chung nguồn hoặc nối chung chân GND (Ground).
 
-- Mạch 2 (ESP32 - WiFi & LAN Slave):
-  - Chân 16 (RX2), 17 (TX2) --> Nối chéo (TX-RX, RX-TX) sang Mạch 1 để truyền/nhận lệnh.
-  - Nguồn cấp 5V & GND nối chung với hệ thống điện của Mạch 1.
+```mermaid
+graph TD
+    subgraph Mạch 1: ESP32 Master Logic (Xử lý Cơ Điện)
+        ESP1[ESP32_1]
+        SR04_1[Cảm biến Siêu âm 1 - Lối vào]
+        SR04_2[Cảm biến Siêu âm 2 - Dưới cổng]
+        Servo[Động cơ Servo - Barie]
+        Buzzer[Còi báo động]
+        Btn[Nút bấm Mở/Đóng]
+        
+        ESP1 -- "GPIO 13 (Trig) / 12 (Echo)" --- SR04_1
+        ESP1 -- "GPIO 5 (Trig) / 18 (Echo)" --- SR04_2
+        ESP1 -- "GPIO 4 (PWM)" --- Servo
+        ESP1 -- "GPIO 14" --- Buzzer
+        ESP1 -- "GPIO 26 (PULLUP)" --- Btn
+    end
 
-### 5.2. Hướng dẫn cài đặt và Triển khai
-- Cài đặt phần cứng (ESP32):
-  - Cài đặt Arduino IDE và thêm gói bo mạch ESP32.
-  - Tải thư viện `ESP32Servo` và `LiquidCrystal_I2C` (nếu dùng màn hình LCD).
-  - Nạp file `IOT.ino` vào Mạch 1.
-  - Nạp file `IOT_2.ino` vào Mạch 2 (Lưu ý: Mạch 2 mặc định sử dụng IP động DHCP, kiểm tra IP của mạch qua Serial Monitor hoặc Router).
-- Cài đặt phần mềm (Python Server):
-  - Cài đặt Python 3.x trên máy tính hoặc Raspberry Pi.
-  - Cài đặt các thư viện yêu cầu: `pip install flask requests opencv-python numpy google-generativeai`.
-  - Mở file `core.py` hoặc `ai.py` để cấu hình API Key của Google Gemini nếu cần thiết.
-  - Chạy Server bằng lệnh: `python server.py`.
-- Thiết lập Camera (Android):
-  - Tải ứng dụng `IP Webcam` trên CH Play.
-  - Cài đặt độ phân giải ở mức 1920x1080 (hoặc thấp hơn) để tối ưu hóa tốc độ gửi ảnh.
-  - Tích chọn `Keep screen awake` để tránh việc hệ điều hành Android tự động cho app ngủ đông (gây ra độ trễ 2-3s).
-  - Bấm `Start Server` trên điện thoại, ghi lại địa chỉ IP xuất hiện trên màn hình (VD: `http://192.168.1.xxx:8080`) và nhập vào giao diện Web quản lý trên máy tính.
+    subgraph Mạch 2: ESP32 Network Gateway (Xử lý WiFi)
+        ESP2[ESP32_2]
+        LCD[Màn hình LCD I2C]
+        
+        ESP2 -- "SDA / SCL" --- LCD
+    end
+
+    ESP1 <--"Giao tiếp UART2 (Chân 16 nối 17, 17 nối 16)"--> ESP2
+    ESP1 -.- "Nối chung GND" -.- ESP2
+```
+
++ Chi tiết sơ đồ chân Mạch 1 (ESP32 Master Logic):
+  - Chân 13 (Trig) và Chân 12 (Echo) --> Nối Cảm biến siêu âm 1 (Nhận diện xe tiến vào vùng camera).
+  - Chân 5 (Trig) và Chân 18 (Echo) --> Nối Cảm biến siêu âm 2 (Bảo vệ Zero-Crash, chống kẹt xe dưới barie).
+  - Chân 4 --> Cấp xung PWM cho Động cơ Servo (Điều khiển nâng/hạ thanh chắn Barie).
+  - Chân 14 --> Nối cực dương (+) của Còi chip (Phát tín hiệu bíp bíp khi đóng/mở).
+  - Chân 26 --> Nối Nút bấm cơ học, đầu kia nút bấm nối GND (Mạch có code Pull-up nội bộ).
+  - Chân 16 (RX2) và Chân 17 (TX2) --> Kéo dây giao tiếp UART sang Mạch 2.
+
++ Chi tiết sơ đồ chân Mạch 2 (ESP32 Network Gateway):
+  - Chân 16 (RX2) --> Nối chéo vào chân 17 (TX2) của Mạch 1.
+  - Chân 17 (TX2) --> Nối chéo vào chân 16 (RX2) của Mạch 1.
+  - Các chân Nguồn 5V (VIN) và GND --> Phải nối chung với mạng lưới điện của Mạch 1.
+
+### 5.2. Hướng dẫn cài đặt và Triển khai (Installation Guide)
+Để tái tạo lại dự án này trên thực tế, người triển khai cần thực hiện chuẩn xác 3 bước sau:
+
++ Bước 1: Nạp Firmware cho Phần cứng (ESP32)
+  - Mở phần mềm Arduino IDE, cài đặt gói hỗ trợ bo mạch `esp32` của Espressif.
+  - Tìm và cài đặt 2 thư viện bắt buộc từ Library Manager: `ESP32Servo` và `LiquidCrystal_I2C`.
+  - Mở file `IOT.ino`, biên dịch và nạp code vào Mạch 1 qua cáp Micro-USB/Type-C.
+  - Mở file `IOT_2.ino`, nạp code vào Mạch 2. Ngay sau khi nạp, hãy mở Serial Monitor (Baudrate 115200) để ghi lại dải địa chỉ IP nội bộ mà Router vừa cấp tự động (DHCP) cho mạch này.
+
++ Bước 2: Thiết lập Máy chủ Quản lý (Python Server)
+  - Yêu cầu môi trường: Cài đặt Python 3.9 trở lên trên máy tính hoặc Raspberry Pi.
+  - Cài đặt các thư viện lõi thông qua Terminal/Command Prompt: `pip install flask requests opencv-python numpy google-generativeai`.
+  - Thiết lập AI: Mở file `ai.py` (hoặc cấu hình) để khai báo mã khóa (API Key) được cấp miễn phí từ Google AI Studio.
+  - Khởi động: Mở Terminal tại thư mục `Python_ALPR`, chạy lệnh `python server.py`. Máy chủ Web Dashboard sẽ chính thức lắng nghe tại cổng `http://localhost:5000`.
+
++ Bước 3: Cấu hình Camera Giám sát (Điện thoại Android)
+  - Truy cập CH Play, tìm và cài đặt ứng dụng `IP Webcam` (của Pavel Khlebovich).
+  - Tại giao diện ứng dụng, kéo xuống phần cấu hình Video (Video Preferences) -> Hạ độ phân giải xuống mức 1920x1080 hoặc thấp hơn. Việc này đóng vai trò sống còn giúp tốc độ truyền ảnh qua mạng LAN mượt mà và không gây quá tải cho bộ định tuyến (Router).
+  - Tại phần Cài đặt năng lượng (Power Management), bắt buộc tích chọn `Keep screen awake`. Thao tác này nhằm ngăn chặn hệ điều hành Android tự động cho ứng dụng ngủ đông (Doze Mode) - nguyên nhân số 1 gây ra độ trễ 2-3s mỗi lần máy chủ yêu cầu ảnh.
+  - Bấm `Start Server` ở dưới cùng. Ghi chép lại dải địa chỉ IP màu đỏ hiện trên màn hình (Ví dụ: `http://192.168.1.55:8080`) để nhập vào cấu hình của Web Dashboard.
 
 ## 6. Sơ đồ hoạt động (Operation Flow)
 - Xe tiến vào vùng cổng --> Cảm biến siêu âm 1 bị che.
