@@ -40,7 +40,7 @@
   - Vai trò: Đóng vai trò là "Bộ não" trung tâm điều phối toàn bộ chu trình tự động hóa.
   - Triển khai thu thập hình ảnh: Xây dựng module `camera.py` liên tục quét luồng ảnh tĩnh từ điện thoại Android thông qua thư viện `urllib` tối ưu tốc độ băng thông.
   - Triển khai phân tích AI: Xây dựng module `ai.py` băm nhỏ hình ảnh thành byte và gửi API lên mô hình Google Gemini. Thiết lập bộ lọc Regular Expression (Regex) để trích xuất duy nhất chuỗi ký tự biển số từ khối văn bản lộn xộn do AI trả về.
-  - Triển khai lưu trữ & Web UI: Sử dụng thư viện `sqlite3` để ghi nhận mốc thời gian (Timestamp) và biển số xe vào CSDL nội bộ `history.db`. Dựng framework `Flask` tạo giao diện Web Dashboard trực quan, cho phép nhân viên bảo vệ xem lại lịch sử ra vào và nhấn nút mở cổng khẩn cấp ngay trên màn hình.
+  - Triển khai lưu trữ & Web UI: Sử dụng hệ quản trị CSDL phi quan hệ `MongoDB` (thông qua thư viện `pymongo`) để ghi nhận mốc thời gian (Timestamp) và biển số xe dưới dạng Document linh hoạt. Dựng framework `Flask` tạo giao diện Web Dashboard trực quan, cho phép nhân viên bảo vệ xem lại lịch sử ra vào và nhấn nút mở cổng khẩn cấp ngay trên màn hình.
 
 ## 4. Sơ đồ đấu nối và Hướng dẫn cài đặt (Wiring Diagram & Installation Guide)
 
@@ -122,7 +122,7 @@ sequenceDiagram
     participant Py as Python Server
     participant Cam as IP Webcam
     participant AI as Gemini API
-    participant DB as SQLite DB
+    participant DB as MongoDB
 
     Xe->>M1: 1. Tiến vào vùng quét
     activate M1
@@ -187,7 +187,7 @@ IOT_ThangLong/
 │   ├── server.py          # Entry point của Máy chủ Flask Web/API
 │   ├── ai.py              # Module giao tiếp Google Gemini Vision API
 │   ├── camera.py          # Module lấy ảnh Snapshot từ IP Webcam Android
-│   ├── db.py              # Module tương tác với CSDL SQLite (Lịch sử xe ra/vào)
+│   ├── db.py              # Module tương tác với CSDL MongoDB (Lịch sử xe ra/vào)
 │   ├── core.py            # Chứa các hàm tiện ích bổ trợ (Logger, Utils)
 │   ├── config.json        # Tệp cấu hình IP Camera và các thông số tùy chỉnh
 │   ├── requirements.txt   # Danh sách thư viện Python cần thiết (pip install)
@@ -233,9 +233,9 @@ IOT_ThangLong/
   - [Hàm] `parse_gemini_response()`: Cạo dữ liệu (Data Scraping) bằng biểu thức chính quy. Dọn dẹp hoàn toàn các đoạn văn bản rườm rà của AI, bóc tách chính xác chuỗi JSON chứa giá trị "Biển số xe".
 
 + Module Cơ sở Dữ liệu (`db.py`)
-  - [Thư viện] `sqlite3`: Hệ quản trị CSDL quan hệ siêu nhẹ, không cần cài đặt Server SQL cồng kềnh, lưu trữ mọi lịch sử ra/vào thẳng vào 1 tệp tĩnh (`history.db`).
-  - [Hàm] `init_db()`: Khởi tạo cấu trúc bảng (Table) ban đầu (Gồm: ID, Ngày giờ, Biển số, Đường dẫn file ảnh).
-  - [Hàm] `add_record()` / `get_history()`: Thực thi các lệnh SQL tĩnh (INSERT, SELECT) để lưu xe mới và xuất dữ liệu báo cáo ra Web UI.
+  - [Thư viện] `pymongo`: Thư viện kết nối máy chủ Python với hệ quản trị CSDL phi quan hệ MongoDB, cho phép lưu trữ dữ liệu phi cấu trúc (JSON/BSON) tốc độ cao và dễ dàng mở rộng.
+  - [Hàm] `init_db()`: Khởi tạo kết nối tới MongoDB Client, định nghĩa tên Database (`parking_db`) và Collection (`history_log`).
+  - [Hàm] `add_record()` / `get_history()`: Thực thi các lệnh truy vấn NoSQL (`insert_one`, `find`) để đẩy mảng dữ liệu (Dict) lịch sử mới và xuất truy vấn mảng báo cáo trả về cho Web UI.
 
 ## 8. Kết quả đạt được của dự án (Current Achievements)
 Tính đến thời điểm hiện tại, dự án đã hoàn thành và nghiệm thu thành công các hạng mục cốt lõi, bao phủ từ phần cứng tới phần mềm:
@@ -257,5 +257,5 @@ Tính đến thời điểm hiện tại, dự án đã hoàn thành và nghiệ
 
 + Về mặt Phần mềm Quản trị (Web Dashboard)
   - Triển khai thành công giao diện Web LAN (Flask HTML/CSS/JS) giao tiếp mượt mà trên nhiều nền tảng thiết bị (PC, Máy tính bảng, Điện thoại).
-  - Hoàn thiện hệ thống CSDL Lịch sử (SQLite), tự động lưu trữ và truy xuất mốc thời gian thực (Timestamp), file ảnh thực tế và văn bản biển số đã được AI biên dịch.
+  - Hoàn thiện hệ thống CSDL Lịch sử bằng MongoDB (NoSQL), cho phép tự động lưu trữ tốc độ cao và truy xuất mốc thời gian thực (Timestamp), file ảnh thực tế và văn bản biển số đã được AI biên dịch.
   - Tích hợp Bảng điều khiển từ xa ngay trên trình duyệt (Soft-Buttons), cho phép bảo vệ can thiệp Mở/Đóng/Dừng cổng khẩn cấp chỉ bằng một cú click chuột.
