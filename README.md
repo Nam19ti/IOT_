@@ -42,14 +42,28 @@
   - Triển khai phân tích AI: Xây dựng module `ai.py` băm nhỏ hình ảnh thành byte và gửi API lên mô hình Google Gemini. Thiết lập bộ lọc Regular Expression (Regex) để trích xuất duy nhất chuỗi ký tự biển số từ khối văn bản lộn xộn do AI trả về.
   - Triển khai lưu trữ & Web UI: Sử dụng thư viện `sqlite3` để ghi nhận mốc thời gian (Timestamp) và biển số xe vào CSDL nội bộ `history.db`. Dựng framework `Flask` tạo giao diện Web Dashboard trực quan, cho phép nhân viên bảo vệ xem lại lịch sử ra vào và nhấn nút mở cổng khẩn cấp ngay trên màn hình.
 
-## 4. Tiến độ dự án / Dự án làm được đến đâu (Current Achievements)
-+ Hoàn thiện phần cứng phần cơ điện: Đọc tín hiệu cảm biến siêu âm chính xác, điều khiển Servo mượt mà, thiết lập nút bấm cứng và còi báo hiệu chống kẹt xe.
-+ Tối ưu hóa Mạng & Camera: 
-  - Khắc phục hoàn toàn lỗi rớt mạng và đứt kết nối HTTP.
-  - Chuyển đổi thành công Mạch ESP32 kết nối mạng sang chế độ IP Động (DHCP), tăng tính linh hoạt khi triển khai ở các mạng WiFi khác nhau.
-  - Tối ưu hóa giao thức lấy ảnh (bỏ cơ chế giả lập trình duyệt, dùng gói tin thô) giúp giảm độ trễ chụp từ 2.5s xuống mức Tức thì.
-+ Tích hợp AI thành công: Server Python đã giao tiếp ổn định với Gemini, trích xuất chính xác chuỗi ký tự biển số ngay cả khi ảnh bị lóa hoặc xe di chuyển.
-+ Giao diện Quản trị (Web UI): Cung cấp bảng điều khiển (Dashboard) cho phép bảo vệ xem lịch sử ra vào, xem ảnh chụp xe, và có nút ấn Mở/Đóng cổng khẩn cấp qua giao diện web.
+## 4. Kết quả đạt được của dự án (Current Achievements)
+Tính đến thời điểm hiện tại, dự án đã hoàn thành và nghiệm thu thành công các hạng mục cốt lõi, bao phủ từ phần cứng tới phần mềm:
+
++ Về mặt Vi mạch Phần cứng (Hardware & Electronics)
+  - Khắc phục triệt để tình trạng vi điều khiển bị treo (Watchdog Reset) bằng kiến trúc 2 mạch rời song song (Decentralization).
+  - Hoàn thiện thuật toán nhận diện xe bằng hệ thống 2 Cảm biến siêu âm (HC-SR04), có khả năng khử nhiễu tự động để tránh nhận nhầm người đi bộ.
+  - Tích hợp thành công tính năng "Zero-Crash": Mạch liên tục quét không gian dưới barie trước và trong quá trình hạ cổng, tự động dừng và bật ngược cần lên nếu phát hiện đuôi xe chưa đi qua hết.
+  - Trang bị đầy đủ giao diện tương tác vật lý tại bốt bảo vệ: Nút bấm cơ học (có thuật toán Debounce chống rung phím) và hệ thống còi báo bíp bíp cảnh báo an toàn.
+
++ Về mặt Giao thức Mạng và Camera (Networking & Vision)
+  - Giải quyết dứt điểm tình trạng lỗi rớt mạng cục bộ (Timeout) giữa Server và mạch ESP32 khi gọi API liên tục.
+  - Cấu hình lại Mạch 2 sang cơ chế xin cấp phát IP tự động (DHCP), loại bỏ hoàn toàn việc phải nạp lại code mỗi khi mang hệ thống sang một mạng WiFi mới.
+  - Bước đột phá trong Camera: Bằng việc loại bỏ thư viện `requests` cồng kềnh và chuyển sang gói tin thô cấp thấp (`urllib` không kèm Header), độ trễ chụp ảnh từ IP Webcam trên điện thoại đã giảm tới 96% (từ 2.5 giây xuống dưới 0.1 giây), đảm bảo chộp dính biển số ngay khi xe vừa lăn bánh qua vạch.
+
++ Về mặt Trí tuệ Nhân tạo ALPR (AI Integration)
+  - Xây dựng thành công kênh giao tiếp API cực kỳ ổn định giữa máy chủ cục bộ và Google Gemini Vision.
+  - Tối ưu hóa câu lệnh ngữ cảnh (Prompt Engineering) giúp AI nhận diện chính xác các định dạng biển số Việt Nam (VD: 29A-123.45), vượt qua các điều kiện khắc nghiệt như: ảnh mờ lóa sáng, góc chụp nghiêng, hay xe đang di chuyển.
+
++ Về mặt Phần mềm Quản trị (Web Dashboard)
+  - Triển khai thành công giao diện Web LAN (Flask HTML/CSS/JS) giao tiếp mượt mà trên nhiều nền tảng thiết bị (PC, Máy tính bảng, Điện thoại).
+  - Hoàn thiện hệ thống CSDL Lịch sử (SQLite), tự động lưu trữ và truy xuất mốc thời gian thực (Timestamp), file ảnh thực tế và văn bản biển số đã được AI biên dịch.
+  - Tích hợp Bảng điều khiển từ xa ngay trên trình duyệt (Soft-Buttons), cho phép bảo vệ can thiệp Mở/Đóng/Dừng cổng khẩn cấp chỉ bằng một cú click chuột.
 
 ## 5. Sơ đồ đấu nối và Hướng dẫn cài đặt (Wiring Diagram & Installation Guide)
 
