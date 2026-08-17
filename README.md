@@ -1,9 +1,9 @@
-# BÁO CÁO NGHIÊN CỨU: HỆ THỐNG NHẬN DIỆN BIỂN SỐ VÀ QUẢN LÝ BÃI ĐỖ XE TỰ ĐỘNG (ALPR SMART PARKING)
+# NGHIÊN CỨU: HỆ THỐNG NHẬN DIỆN BIỂN SỐ VÀ QUẢN LÝ BÃI ĐỖ XE TỰ ĐỘNG (ALPR SMART PARKING)
 
 ## 1. Vấn đề nghiên cứu (Problem Statement)
-+ Tại các bãi đỗ xe truyền thống, việc quản lý ra vào hiện tại đòi hỏi nhiều nhân lực, dễ xảy ra sai sót khi ghi chép thủ công và thường xuyên gây ùn tắc tại cổng vào các giờ cao điểm.
-+ Các hệ thống nhận diện biển số (ALPR) chuyên dụng trên thị trường có chi phí đầu tư ban đầu quá cao (bao gồm camera chuyên dụng, máy chủ xử lý AI cấu hình khủng, và bản quyền phần mềm).
-+ Nhu cầu cấp thiết là xây dựng một hệ thống đỗ xe thông minh, tự động hóa đóng/mở cổng, với chi phí siêu rẻ bằng cách tận dụng sức mạnh xử lý đám mây (Cloud AI), camera từ điện thoại cũ và vi điều khiển ESP32.
++ Thực trạng hiện nay: Tại các khu dân cư, cơ quan hay bãi đỗ xe truyền thống, việc kiểm soát xe ra vào vẫn chủ yếu dựa vào sức người (bảo vệ ghi vé giấy, quẹt thẻ thủ công). Phương pháp này bộc lộ nhiều hạn chế như: tốn kém chi phí thuê nhân sự trực 24/24, dễ xảy ra sai sót hoặc gian lận, làm mất vé xe, và đặc biệt là gây ùn tắc giao thông cục bộ tại khu vực cổng vào những khung giờ cao điểm (giờ đi làm, giờ tan tầm).
++ Rào cản công nghệ: Mặc dù các hệ thống nhận diện biển số tự động (ALPR - Automated License Plate Recognition) đã có mặt trên thị trường để giải quyết bài toán trên, nhưng chúng lại gặp một rào cản rất lớn về mặt chi phí. Một hệ thống ALPR tiêu chuẩn yêu cầu phải có Camera IP chuyên dụng đắt tiền (vài triệu đến hàng chục triệu đồng), một Máy chủ (Server) cục bộ tích hợp Card đồ họa (GPU) cấu hình cực mạnh để chạy các mô hình AI nặng nề, cùng với chi phí bảo trì và bản quyền phần mềm đắt đỏ.
++ Giải pháp đề xuất: Từ những bất cập trên, dự án này được ra đời nhằm mục đích "bình dân hóa" công nghệ bãi đỗ xe thông minh. Thay vì sử dụng thiết bị đắt tiền, dự án sử dụng Camera từ những chiếc Điện thoại thông minh (Smartphone) Android cũ đã qua sử dụng, kết hợp với các vi điều khiển giá siêu rẻ ESP32 (chỉ khoảng vài chục nghìn đồng). Đặc biệt, thay vì dùng máy chủ cấu hình cao, dự án đẩy khâu phân tích hình ảnh nặng nề lên Trí tuệ nhân tạo đám mây (Google Gemini Vision API) hoàn toàn miễn phí. Sự kết hợp này tạo ra một hệ thống tự động 100%: Tự động phát hiện xe đến -> Tự động chụp ảnh -> Tự động đọc biển số -> Tự động mở cổng, với chi phí đầu tư ban đầu tiệm cận mức 0 đồng.
 
 ## 2. Đối tượng nghiên cứu (Research Objects)
 + Hệ thống Vi điều khiển (Microcontrollers): ESP32 được sử dụng làm lõi xử lý phần cứng, giao tiếp cảm biến và điều khiển cơ cấu chấp hành (Servo).
