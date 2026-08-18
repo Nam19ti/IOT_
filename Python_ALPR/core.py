@@ -90,6 +90,7 @@ class SystemController:
         # 3. Các Module Ngoại vi (Được khởi tạo sau bởi server.py)
         self.camera = None          # Module kết nối IP Camera
         self.sync_manager = None    # Luồng chạy nền đồng bộ Cloud
+        self.capture_lock = threading.Lock() # Khóa chống trùng lặp / chống spam request chụp ảnh khi đang xử lý OCR
 
 
 def log_action(action_type, details, ip_address="System"):

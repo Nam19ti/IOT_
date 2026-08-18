@@ -437,6 +437,11 @@ def create_app(controller):
         if not controller.ai_ready:
             p("[WEB] Nhan tin hieu xe vao nhung AI chua san sang!")
             return jsonify({"success": False, "error": "AI chua load xong!"})
+
+        # KHÓA XỬ LÝ: Nếu đang bận xử lý biển số trước đó, từ chối request mới ngay lập tức
+        if not controller.capture_lock.acquire(blocking=False):
+            p("[HETHONG] Dang xu ly bien so truoc, TU CHOI request chup anh moi!")
+            return jsonify({"success": False, "error": "Dang xu ly, vui long cho!"}), 429
             
         start = time.time()
         p("\n[HETHONG] IOT_2 bao co xe vao! Dang chup anh tu IP Webcam...")
@@ -560,6 +565,10 @@ def create_app(controller):
         except Exception as e:
             p(f"    -> [LOI TONG HOP]: {e}")
             return jsonify({"success": False, "error": str(e)})
+        finally:
+            # LUÔN LUÔN GỠ KHÓA sau khi xử lý xong (dù thành công hay lỗi)
+            controller.capture_lock.release()
+            p("    -> [LOCK] Da giai phong khoa xu ly.")
 
 
     @app.route('/set_settings', methods=['POST'])
