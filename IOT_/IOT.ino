@@ -150,6 +150,11 @@ void closeGate() {
     delay(100);
     beepBuzzer();       // Kêu bíp thứ 2 báo hiệu cổng đã hạ
     isGateOpen = false; // Cập nhật trạng thái
+    
+    // BẮT BUỘC RESET TRẠNG THÁI CẢM BIẾN (Tránh kẹt carInside khi bị ép đóng thủ công/nút bấm)
+    carInside = false;
+    carAtGate = false;
+    
     Serial2.println("STATE:CLOSED"); // Báo trạng thái cho IOT_2
   }
 }
