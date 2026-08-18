@@ -291,3 +291,26 @@ Hệ thống sử dụng MongoDB để quản lý tài khoản và số dư (`ba
 - Nếu xe có trong CSDL (Xe Quen) và số dư `balance >= 15000` VNĐ: Hệ thống tự động trừ 15.000đ vào Database, gửi lệnh mở cổng và báo "Đã Thu Phí".
 - Nếu xe có trong CSDL nhưng `balance < 15000`: Hệ thống báo "Hết Tiền", từ chối mở cổng.
 - Nếu xe không có trong CSDL: Báo "Xe Khách Lạ" và từ chối mở cổng.
+
+
+## 10. Các Tính năng An toàn và Chống Gian lận Chuyên sâu (Safety & Anti-Fraud Features)
+Hệ thống vừa được nâng cấp loạt tính năng bảo mật và xử lý ngoại lệ (Edge-cases) cấp độ công nghiệp để ngăn chặn gian lận trốn vé và chống treo hệ thống:
+
++ **Cơ chế Chống Bám Đuôi (Anti-Tailgating):**
+  - Bình thường, khi xe trước đi qua cảm biến dưới cổng (S2), hệ thống sẽ đếm ngược 3 giây để đảm bảo đuôi xe lọt qua an toàn rồi mới sập barie.
+  - Tuy nhiên, nếu phát hiện có chiếc xe thứ 2 cố tình bám đuôi, thò đầu vào vùng cảm biến lối vào (S1) trong lúc cổng đang đếm ngược 3 giây, hệ thống sẽ **lập tức hủy đếm ngược và sập barie ngay lập tức** chặn đứng xe bám đuôi. Chiếc xe này sau đó phải đợi hết thời gian đóng băng (cooldown) mới được hệ thống nhận diện như một xe mới.
+
++ **Khóa Chụp Bồi khi đang xử lý (OCR Processing Lock):**
+  - Ngay khi xe tiến vào (S1) và mạch gửi lệnh chụp ảnh, hệ thống tự động BẬT cờ khóa (`isProcessing = true`).
+  - Trong suốt quá trình AI Server phân tích ảnh (thường mất 3-4s), hệ thống từ chối mọi biến động tại S1, ngăn chặn việc chụp liên tiếp nhiều bức ảnh gây spam máy chủ hoặc trừ tiền nhiều lần cho cùng một xe. Chỉ khi nhận được thông báo xử lý xong từ Server (Mở cổng hoặc Từ chối), cờ khóa mới được gỡ.
+
++ **Giãn cách Chụp ảnh 10 giây (10s Capture Cooldown):**
+  - Nếu xe vào S1, AI đã xử lý xong nhưng chiếc xe đó kiên quyết không đi qua cổng (ví dụ: quay đầu bỏ đi, hoặc do hết tiền không mở được cổng), mạch sẽ tự động gỡ khóa Cảm biến 1 sau **10 giây**.
+  - Lúc này, chiếc xe đó (hoặc xe khác) mới được quyền kích hoạt S1 để chụp lại bức ảnh mới. Điều này chống kẹt hệ thống vĩnh viễn (Permanent Sensor Jam).
+
++ **Cấm Chụp Ảnh khi cổng đã mở (Open-Gate Suppression):**
+  - Khi barie đang ở trạng thái nâng (do xe trước vừa đi qua, do bảo vệ bấm nút cứng, hoặc mở qua Web UI), hệ thống sẽ phớt lờ hoàn toàn các cảm biến ở lối vào (S1).
+  - Điều này giải quyết triệt để tình trạng: Bảo vệ mở cổng sẵn nhưng xe đi qua lại kích hoạt cảm biến chụp ảnh, dẫn đến việc thu phí khống (trừ tiền oan) hoặc làm rối loạn thuật toán đóng cổng.
+
++ **Bảo vệ Trạng thái Máy trạng thái (State Machine Reset Guard):**
+  - Trong trường hợp bảo vệ ép đóng cổng khẩn cấp (qua Web hoặc nút bấm) khi xe đang ở lửng lơ giữa S1 và S2, lệnh đóng cổng sẽ đi kèm lệnh "Xóa trí nhớ" toàn bộ cảm biến (`carInside = false`). Tránh tình trạng hệ thống bị kẹt ảo rằng vẫn đang có xe trong trạm, gây liệt toàn bộ các lượt xe phía sau.
