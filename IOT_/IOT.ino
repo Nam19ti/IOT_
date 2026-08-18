@@ -327,11 +327,6 @@ void loop() {
     lastS2ClearTime = millis();
   }
 
-  // --- CHỐNG KẸT TRẠNG THÁI (TIMEOUT) ---
-  if (carInside && !carAtGate && (millis() - lastCarInTime > 15000)) {
-    carInside = false;
-    Serial.println(">> [SENS] TIMEOUT 15s: Xe khong qua cong, huy trang thai cho!");
-  }
   
   if (trigger2 && carInside) {
     // Xe bắt đầu tiến sâu vào và chắn ngang Cảm biến 2 (Đang nằm ngay dưới thanh chắn Barie)
