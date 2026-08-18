@@ -268,7 +268,7 @@ class SyncManager:
                         p("  -> [3/3] Telegram: Không tìm thấy file ảnh vật lý trên ổ cứng!")
                 except Exception as e:
                     p(f"  -> [3/3] Telegram LỖI: {e}")
-                    all_success = False
+                    # KHÔNG gán all_success = False ở đây nữa để tránh spam MongoDB nếu cấu hình Telegram bị sai
             else:
                 if vehicle_type == "stranger":
                     p("  -> [3/3] Telegram: Bỏ qua (Do là xe lạ)")
