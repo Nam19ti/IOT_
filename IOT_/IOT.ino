@@ -312,8 +312,8 @@ void loop() {
     lastCarInTime = millis();
     Serial.println(">> [SENS] XE VAO TRAM!");
     
-    if (isManualMode) {
-      Serial.println(">> [SENS] BO QUA CHUP ANH (Do dang mo cong thu cong/vinh vien)");
+    if (isManualMode || isGateOpen) {
+      Serial.println(">> [SENS] BO QUA CHUP ANH (Do cong dang mo san hoac che do thu cong)");
     } else {
       Serial2.println("CAR_IN"); // Bao qua UART cho IOT_2
     }
