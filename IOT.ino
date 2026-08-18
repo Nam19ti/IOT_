@@ -29,8 +29,7 @@ const float THRESHOLD = 20.0;
 const float SPEED_CONST = 0.017;
 
 bool isGateOpen = false; // Cờ lưu trạng thái hiện tại của cổng (true = đang mở, false = đang đóng)
-bool isManualMode = false;
-bool ignoreNextCar = false; // Bỏ qua chụp ảnh nếu mở thủ công // Cờ phân biệt chế độ đóng mở thủ công bằng nút/web (đòi hỏi đóng thủ công) hay tự động
+bool isManualMode = false; // Cờ phân biệt chế độ đóng mở thủ công bằng nút/web (đòi hỏi đóng thủ công) hay tự động
 bool carInside = false; // Trạng thái xác nhận xe đã bắt đầu đi vào hệ thống (đã qua cảm biến 1)
 bool carAtGate = false; // Trạng thái xe đang nằm ngay dưới thanh chắn barie (đang che cảm biến 2)
 unsigned long lastClearTime = 0; // Lưu thời điểm cuối cùng cảm biến 2 không bị che (dùng cho thuật toán trễ 3s đóng cổng)
@@ -153,8 +152,6 @@ void closeGate() {
     delay(100);
     beepBuzzer();       // Kêu bíp thứ 2 báo hiệu cổng đã hạ
     isGateOpen = false; // Cập nhật trạng thái
-    carInside = false;  // Reset tuyệt đối chu trình cảm biến
-    carAtGate = false;
     Serial2.println("STATE:CLOSED"); // Báo trạng thái cho IOT_2
   }
 }
@@ -281,7 +278,6 @@ void loop() {
       Serial.println(">> [UART] Nhan lenh MO CONG (Tu Dong Dong)");
       openGate();
       isManualMode = false; // Lệnh mở chuẩn, sẽ tự động đóng khi xe qua cổng
-      if (!carInside) ignoreNextCar = true; // Web UI mở cổng trước khi xe vào -> Bỏ qua chụp ảnh
     } else if (msg == "OPEN_MANUAL") {
       Serial.println(">> [UART] Nhan lenh MO CONG (Khong Tu Dong Dong)");
       openGate();
@@ -316,14 +312,6 @@ void loop() {
     lastS2ClearTime = millis();
   }
 
-  // --- CHỐNG KẸT TRẠNG THÁI (TIMEOUT) ---
-  // Nếu S1 báo có xe (carInside = true) nhưng sau 15s xe vẫn không tới S2 (carAtGate = false)
-  // -> Khả năng cao xe đã lùi lại do AI từ chối, hoặc ai đó đi ngang qua. Phải reset để đón xe khác!
-  if (carInside && !carAtGate && (millis() - lastCarInTime > 15000)) {
-    carInside = false;
-    Serial.println(">> [SENS] TIMEOUT 15s: Xe khong qua cong, huy trang thai cho!");
-  }
-
   // --- Logic xe đi VÀO (Qua Cảm biến 1) ---
   // trigger1 là cờ báo có xe khi khoảng cách nhỏ hơn 20cm, HOẶC sụt giảm > ngưỡng 20cm so với nền
   bool trigger1 = (d1 < 20.0) || (baseline1 - d1 > THRESHOLD);
@@ -331,20 +319,13 @@ void loop() {
   // Điều kiện: 
   // 1. Có xe che (trigger1)
   // 2. Hệ thống chưa có xe trong trạm (!carInside)
-  // 3. Không ở chế độ mở thủ công (!isManualMode)
-  // 4. Cổng đang ĐÓNG (!isGateOpen) - Tránh chụp ảnh khi cổng đã được mở sẵn
-  // 5. Xe trước đó đã vào quá 5 giây (chống nhiễu nhấp nháy)
-  // 6. Cảm biến 2 đã hoàn toàn TRỐNG trải ít nhất 3.3 giây (Chống chụp ảnh khi xe trước chưa qua hẳn)
-  if (trigger1 && !carInside && !isManualMode && (millis() - lastCarInTime > 5000) && (millis() - lastS2ClearTime > 3300)) {
+  // 3. Xe trước đó đã vào quá 5 giây (chống nhiễu nhấp nháy)
+  // 4. (MỚI) Cảm biến 2 đã hoàn toàn TRỐNG trải ít nhất 3.3 giây (Chống chụp ảnh khi xe trước chưa qua hẳn)
+  if (trigger1 && !carInside && (millis() - lastCarInTime > 5000) && (millis() - lastS2ClearTime > 3300)) {
     carInside = true; // Xác nhận có xe đang đi vào
     lastCarInTime = millis();
     Serial.println(">> [SENS] XE VAO TRAM!");
-    if (ignoreNextCar) {
-      Serial.println(">> [SENS] Bo qua chup anh (Do mo thu cong tu Web)");
-      ignoreNextCar = false;
-    } else {
-      Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2
-    }
+    Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2 để xử lý logic (như quẹt thẻ, đếm xe)
   }
   
   // Phần xử lý đóng cổng với Cảm biến 2

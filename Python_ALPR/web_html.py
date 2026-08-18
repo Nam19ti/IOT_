@@ -264,7 +264,7 @@ def get_html(controller):
     <!-- TAB: STRANGERS -->
     <div id="tab_stranger" style="display: none;">
       <div class="card">
-        <div class="card-title"> Xử Lý Hết Tiền/Khách Lạ</div>
+        <div class="card-title"> Xử Lý Xe Lạ</div>
         <p style="color:#64748b; font-size:0.88rem; text-align:center; margin-bottom:1rem;">
           Các xe chưa có trong hệ thống. Bạn có thể duyệt thêm hoặc đưa vào cảnh báo.
         </p>
@@ -674,8 +674,8 @@ def get_html(controller):
         if(!item.image_base64) imgTag = `<span style="color:#64748b; font-size:0.75rem;">(No image)</span>`;
         
         let typeColor = '#64748b', typeLabel = 'Không rõ';
-        if(item.vehicle_type === 'known')    {{ typeColor = '#10b981'; typeLabel = 'Đã Thu Phí'; }}
-        if(item.vehicle_type === 'stranger') {{ typeColor = '#f59e0b'; typeLabel = 'Hết Tiền/Khách Lạ'; }}
+        if(item.vehicle_type === 'known')    {{ typeColor = '#10b981'; typeLabel = 'Xe Quen'; }}
+        if(item.vehicle_type === 'stranger') {{ typeColor = '#f59e0b'; typeLabel = 'Xe Lạ'; }}
         if(item.vehicle_type === 'warning')  {{ typeColor = '#ef4444'; typeLabel = 'CANH BAO'; }}
         
         html += `<div style="display:flex; align-items:center; padding:10px; border-bottom:1px solid #1e293b;">`;
