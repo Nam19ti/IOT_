@@ -31,7 +31,8 @@ const float SPEED_CONST = 0.017;
 bool isGateOpen = false; // Cờ lưu trạng thái hiện tại của cổng (true = đang mở, false = đang đóng)
 bool isManualMode = false; // Cờ phân biệt chế độ đóng mở thủ công bằng nút/web (đòi hỏi đóng thủ công) hay tự động
 bool carInside = false; // Trạng thái xác nhận xe đã bắt đầu đi vào hệ thống (đã qua cảm biến 1)
-bool carAtGate = false; // Trạng thái xe đang nằm ngay dưới thanh chắn barie (đang che cảm biến 2)
+bool carAtGate = false; // Trạng thái xe đang nằm ngay dưới thanh chắn barie
+bool isProcessing = false; // Cờ báo hiệu Server đang xử lý ảnh (chưa có kết quả) (đang che cảm biến 2)
 unsigned long lastClearTime = 0; // Lưu thời điểm cuối cùng cảm biến 2 không bị che (dùng cho thuật toán trễ 3s đóng cổng)
 
 // Các biến phục vụ thuật toán chống dội (debounce) cho nút bấm
@@ -279,16 +280,22 @@ void loop() {
     
     if (msg == "OPEN") {
       Serial.println(">> [UART] Nhan lenh MO CONG (Tu Dong Dong)");
+      isProcessing = false; // Xóa cờ đang xử lý
       openGate();
       isManualMode = false; // Lệnh mở chuẩn, sẽ tự động đóng khi xe qua cổng
     } else if (msg == "OPEN_MANUAL") {
       Serial.println(">> [UART] Nhan lenh MO CONG (Khong Tu Dong Dong)");
+      isProcessing = false;
       openGate();
       isManualMode = true; // Lệnh mở thủ công từ xa (VD: Bảo vệ bấm trên app web), cấm tự động đóng
     } else if (msg == "CLOSE") {
       Serial.println(">> [UART] Nhan lenh DONG CONG");
+      isProcessing = false;
       closeGate();
       isManualMode = false; // Reset lại chế độ tự động bình thường
+    } else if (msg == "DENY") {
+      Serial.println(">> [UART] Nhan lenh TU CHOI (Server da xu ly xong nhung loi/het tien)");
+      isProcessing = false; // Xóa cờ đang xử lý để cho phép timeout 10s hoat dong
     }
   }
 
@@ -321,6 +328,7 @@ void loop() {
       Serial.println(">> [SENS] BO QUA CHUP ANH (Do cong dang mo san hoac che do thu cong)");
     } else {
       Serial2.println("CAR_IN"); // Bao qua UART cho IOT_2
+      isProcessing = true; // Bật cờ khóa chụp ảnh cho đến khi Server báo kết quả
     }
   }
   
@@ -330,6 +338,14 @@ void loop() {
   // Cập nhật liên tục mốc thời gian nếu S2 đang có xe
   if (trigger2) {
     lastS2ClearTime = millis();
+  }
+
+  // --- KHOẢNG CÁCH GIỮA MỖI LẦN CHỤP 10S ---
+  // Nếu hệ thống đang KHÔNG bận xử lý ảnh (!isProcessing), và xe đứng ở S1 quá 10s mà chưa qua S2
+  // -> Reset trạng thái để S1 được quyền chụp lại bức ảnh khác!
+  if (carInside && !carAtGate && !isProcessing && (millis() - lastCarInTime > 10000)) {
+    carInside = false;
+    Serial.println(">> [SENS] TIMEOUT 10s: Xe khong qua S2, mo khoa cho phep chup lai!");
   }
 
 

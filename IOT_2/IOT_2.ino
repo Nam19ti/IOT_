@@ -216,6 +216,7 @@ void loop() {
             if (plate == "Khong Nhan Dien Duoc" || plate == "Khong Thay Bien" || plate == "") {
               // Lỗi nhận diện hoặc không thấy biển
               printLCD("Loi Nhan Dien", "Vui long thu lai");
+              Serial2.println("DENY"); // Báo cho IOT_1 biết là đã xử lý xong nhưng thất bại
             } else {
               // Nhận diện thành công, giả định đã thu phí và cho mở cổng
               printLCD(plate, "Da thu phi");
@@ -226,6 +227,7 @@ void loop() {
           // Lỗi không kết nối được tới Python Server
           Serial.printf(">> LỖI KẾT NỐI PYTHON SERVER: %s\n", http.errorToString(httpCode).c_str());
           printLCD("Loi Mang LAN", "Khong thay Server");
+          Serial2.println("DENY"); // Báo cho IOT_1 biết là lỗi mạng để giải phóng trạng thái chờ
         }
         http.end(); // Đóng kết nối HTTP để giải phóng tài nguyên
       }
