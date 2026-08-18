@@ -91,7 +91,7 @@ void handleOpenGate() {
     plate = server.arg("plate"); // Lấy giá trị biển số xe từ request
   }
 
-  printLCD(plate, "XE QUEN-MO CONG"); // Hiển thị thông báo xe hợp lệ lên LCD
+  printLCD(plate, "Da thu phi"); // Hiển thị thông báo xe đã thanh toán thành công lên LCD
   Serial2.println("OPEN"); // Gửi lệnh "OPEN" qua UART2 cho IOT_1 để điều khiển Servo mở cổng
   
   // Trả về phản hồi cho Python Server biết đã xử lý thành công
@@ -122,7 +122,7 @@ void handleCloseGate() {
 }
 
 // Hàm xử lý từ chối mở cổng
-// Python server gọi endpoint này khi xe lạ hoặc nằm trong danh sách đen
+// Python server gọi endpoint này khi xe không đủ tiền trong tài khoản
 void handleDenyGate() {
   String plate = "Chua ro";
   // Trích xuất thông tin biển số xe từ request nếu có
@@ -130,7 +130,7 @@ void handleDenyGate() {
     plate = server.arg("plate");
   }
 
-  printLCD(plate, "XE LA/TU CHOI"); // Cảnh báo từ chối phục vụ trên màn hình LCD
+  printLCD(plate, "HET TIEN/TU CHOI"); // Cảnh báo từ chối phục vụ trên màn hình LCD
   // Gửi phản hồi HTTP 200 OK để xác nhận đã nhận được lệnh
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.send(200, "text/plain", "OK! Da hien thi canh bao.");
@@ -147,7 +147,7 @@ void setup() {
   
   lcd.init();       // Khởi tạo màn hình LCD
   lcd.backlight();  // Bật đèn nền LCD
-  printLCD("Khoi dong", "Bai Do Xe Slave"); // Hiển thị thông báo khởi động
+  printLCD("Khoi dong", "VETC LAN Slave"); // Hiển thị thông báo khởi động
 
   // Cài đặt IP Tĩnh cho hệ thống mạng trước khi bắt đầu kết nối WiFi
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, primaryDNS)) {
@@ -217,8 +217,8 @@ void loop() {
               // Lỗi nhận diện hoặc không thấy biển
               printLCD("Loi Nhan Dien", "Vui long thu lai");
             } else {
-              // Nhận diện thành công, giả định xe quen và cho mở cổng
-              printLCD(plate, "XE QUEN-MO CONG");
+              // Nhận diện thành công, giả định đã thu phí và cho mở cổng
+              printLCD(plate, "Da thu phi");
               Serial2.println("OPEN"); // Lệnh qua IOT_1 mở cổng
             }
           }
