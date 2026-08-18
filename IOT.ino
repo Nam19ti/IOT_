@@ -329,9 +329,10 @@ void loop() {
   // Điều kiện: 
   // 1. Có xe che (trigger1)
   // 2. Hệ thống chưa có xe trong trạm (!carInside)
-  // 3. Xe trước đó đã vào quá 5 giây (chống nhiễu nhấp nháy)
-  // 4. (MỚI) Cảm biến 2 đã hoàn toàn TRỐNG trải ít nhất 3.3 giây (Chống chụp ảnh khi xe trước chưa qua hẳn)
-  if (trigger1 && !carInside && (millis() - lastCarInTime > 5000) && (millis() - lastS2ClearTime > 3300)) {
+  // 3. Không ở chế độ mở thủ công (!isManualMode)
+  // 4. Xe trước đó đã vào quá 5 giây (chống nhiễu nhấp nháy)
+  // 5. (MỚI) Cảm biến 2 đã hoàn toàn TRỐNG trải ít nhất 3.3 giây (Chống chụp ảnh khi xe trước chưa qua hẳn)
+  if (trigger1 && !carInside && !isManualMode && (millis() - lastCarInTime > 5000) && (millis() - lastS2ClearTime > 3300)) {
     carInside = true; // Xác nhận có xe đang đi vào
     lastCarInTime = millis();
     Serial.println(">> [SENS] XE VAO TRAM!");
