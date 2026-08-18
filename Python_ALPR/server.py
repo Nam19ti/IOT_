@@ -129,7 +129,7 @@ def create_app(controller):
                     if re.sub(r'[^A-Z0-9]', '', str(v.get("plate", "")).upper()) == clean_plate:
                         found = True; break
                 if not found:
-                    db['vehicles'].insert_one({"plate": plate, "telegram_id": "", "name": "Khách quen (Web)"})
+                    db['vehicles'].insert_one({"plate": plate, "telegram_id": "", "name": "Khách quen (Web)", "balance": 50000.0})
                     
             elif action == "warn":
                 found = False
@@ -536,7 +536,13 @@ def create_app(controller):
                                         break
                                         
                                 if is_known and vehicle_doc:
-                                    balance = float(vehicle_doc.get("balance", 0))
+                                    # Tự động tạo trường balance nếu chưa có (50.000 VNĐ)
+                                    if "balance" not in vehicle_doc:
+                                        balance = 50000.0
+                                        db['vehicles'].update_one({"_id": vehicle_doc["_id"]}, {"$set": {"balance": balance}})
+                                        p(f"    -> [TẶNG TIỀN] Tự động khởi tạo 50.000đ cho xe {plate}")
+                                    else:
+                                        balance = float(vehicle_doc.get("balance", 0))
                                     toll_fee = 15000.0 # Phí qua trạm 15k
                                     if balance >= toll_fee:
                                         has_enough_balance = True
