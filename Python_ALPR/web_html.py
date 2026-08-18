@@ -6,7 +6,7 @@ def get_html(controller):
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bãi Đỗ Xe Thông Minh Thăng Long</title>
+  <title>VETC - Tram Thu Phi Thang Long</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {{
@@ -126,7 +126,7 @@ def get_html(controller):
 </head>
 <body>
   <header>
-    <h1> BÃI ĐỖ XE THÔNG MINH</h1>
+    <h1> TRAM THU PHI VETC</h1>
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <p>EasyOCR Offline &nbsp;|&nbsp; IP Webcam &nbsp;|&nbsp; LAN HTTP</p>
       <button class="btn btn-logout" onclick="logout()" style="padding: 5px 15px; font-size: 0.8rem;">Đăng Xuất</button>
@@ -140,7 +140,7 @@ def get_html(controller):
 
     <!-- TABS NAV -->
     <div class="tab-container">
-      <button class="tab-btn active" id="btn_tab_system" onclick="switchTab('system')">Bãi Đỗ Xe</button>
+      <button class="tab-btn active" id="btn_tab_system" onclick="switchTab('system')">Trạm Thu Phí</button>
       <button class="tab-btn" id="btn_tab_stranger" onclick="switchTab('stranger')">Xe Khách Lạ <span class="badge-count" id="stranger_badge">0</span></button>
       <button class="tab-btn" id="btn_tab_history" onclick="switchTab('history')">Lịch Sử Nhận Diện</button>
       <button class="tab-btn" id="btn_tab_offline" onclick="switchTab('offline')">Hàng Đợi CSV</button>
@@ -264,7 +264,7 @@ def get_html(controller):
     <!-- TAB: STRANGERS -->
     <div id="tab_stranger" style="display: none;">
       <div class="card">
-        <div class="card-title"> Xử Lý Xe Lạ</div>
+        <div class="card-title"> Xử Lý Hết Tiền/Khách Lạ</div>
         <p style="color:#64748b; font-size:0.88rem; text-align:center; margin-bottom:1rem;">
           Các xe chưa có trong hệ thống. Bạn có thể duyệt thêm hoặc đưa vào cảnh báo.
         </p>
@@ -674,8 +674,8 @@ def get_html(controller):
         if(!item.image_base64) imgTag = `<span style="color:#64748b; font-size:0.75rem;">(No image)</span>`;
         
         let typeColor = '#64748b', typeLabel = 'Không rõ';
-        if(item.vehicle_type === 'known')    {{ typeColor = '#10b981'; typeLabel = 'Xe Quen'; }}
-        if(item.vehicle_type === 'stranger') {{ typeColor = '#f59e0b'; typeLabel = 'Xe Lạ'; }}
+        if(item.vehicle_type === 'known')    {{ typeColor = '#10b981'; typeLabel = 'Đã Thu Phí'; }}
+        if(item.vehicle_type === 'stranger') {{ typeColor = '#f59e0b'; typeLabel = 'Hết Tiền/Khách Lạ'; }}
         if(item.vehicle_type === 'warning')  {{ typeColor = '#ef4444'; typeLabel = 'CANH BAO'; }}
         
         html += `<div style="display:flex; align-items:center; padding:10px; border-bottom:1px solid #1e293b;">`;

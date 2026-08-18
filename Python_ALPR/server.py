@@ -522,6 +522,8 @@ def create_app(controller):
                         mongo_uri = controller.config.get("mongo_uri", "").strip()
                         
                         is_known = False
+                        has_enough_balance = False
+                        vehicle_doc = None
                         if mongo_uri:
                             try:
                                 client = pymongo.MongoClient(mongo_uri, serverSelectionTimeoutMS=2000)
@@ -530,15 +532,36 @@ def create_app(controller):
                                 for v in db['vehicles'].find():
                                     if re.sub(r'[^A-Z0-9]', '', str(v.get("plate", "")).upper()) == clean_plate:
                                         is_known = True
+                                        vehicle_doc = v
                                         break
+                                        
+                                if is_known and vehicle_doc:
+                                    balance = float(vehicle_doc.get("balance", 0))
+                                    toll_fee = 15000.0 # Phí qua trạm 15k
+                                    if balance >= toll_fee:
+                                        has_enough_balance = True
+                                        # Trừ tiền trong Database
+                                        new_balance = balance - toll_fee
+                                        db['vehicles'].update_one({"_id": vehicle_doc["_id"]}, {"$set": {"balance": new_balance}})
+                                        p(f"    -> [THU PHÍ] Đã trừ {toll_fee}đ. Số dư còn: {new_balance}đ")
+                                    else:
+                                        p(f"    -> [HẾT TIỀN] Số dư: {balance}đ (Không đủ {toll_fee}đ)")
+                                        
                             except Exception as ex_db:
                                 p(f"    -> [DB CHECK ERR]: {ex_db}")
                                 
-                        if is_known:
-                            p(f"    -> [XE QUEN '{plate}']: Gửi lệnh MỞ CỔNG tới ESP32 ({iot2_ip})...")
+                        if is_known and has_enough_balance:
+                            p(f"    -> [VETC '{plate}']: Đã Thu Phí, Gửi lệnh MỞ CỔNG tới ESP32 ({iot2_ip})...")
+                            # Đổi trạng thái hiển thị trên Web
+                            controller.last_violation["status"] = "Đã Thu Phí"
                             requests.get(f"http://{iot2_ip}/open_gate?plate={plate}", timeout=3)
                         else:
-                            p(f"    -> [XE LẠ/CẢNH BÁO '{plate}']: Gửi lệnh TỪ CHỐI tới ESP32 ({iot2_ip})...")
+                            if is_known and not has_enough_balance:
+                                p(f"    -> [VETC '{plate}']: HẾT TIỀN, Gửi lệnh TỪ CHỐI tới ESP32 ({iot2_ip})...")
+                                controller.last_violation["status"] = "Hết Tiền"
+                            else:
+                                p(f"    -> [XE LẠ '{plate}']: Gửi lệnh TỪ CHỐI tới ESP32 ({iot2_ip})...")
+                                controller.last_violation["status"] = "Xe Khách Lạ"
                             requests.get(f"http://{iot2_ip}/deny_gate?plate={plate}", timeout=3)
                     except Exception as ex:
                         p(f"    -> [LỖI GỬI ESP32]: {ex}")
