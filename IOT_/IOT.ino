@@ -349,14 +349,20 @@ void loop() {
   else if (!trigger2 && carAtGate) {
     // TRƯỜNG HỢP: Khoảng cách d2 đã trở về nền bình thường (Cảm biến 2 báo trống, xe vừa thoát khỏi cổng)
     
-    // THUẬT TOÁN ĐÓNG CỔNG TRỄ: Phải chờ ĐỦ 3 giây liên tục cảm biến trống thì mới được đóng!
-    // Nếu trong vòng 3 giây này, thùng xe lùi lại che cảm biến, lastClearTime lập tức bị reset ở khối if bên trên.
-    if (millis() - lastClearTime > 3000) { 
+    // THUẬT TOÁN ĐÓNG CỔNG CHỐNG BÁM ĐUÔI: 
+    // Chờ 3 giây, HOẶC nếu phát hiện xe sau đang tiến vào (trigger1) thì đóng cổng ngay lập tức!
+    bool shouldCloseNow = (millis() - lastClearTime > 3000) || trigger1;
+    
+    if (shouldCloseNow) { 
       carAtGate = false; // Xóa cờ kẹt cổng
       carInside = false; // Reset toàn bộ chu trình, sẵn sàng đón xe mới
       
       if (!isManualMode) { // Chỉ thực thi tự động nếu hệ thống không bị khóa bởi mở thủ công
-        Serial.println(">> [SENS] XE DA QUA HOAN TOAN 3 GIAY! ĐONG CONG.");
+        if (trigger1) {
+          Serial.println(">> [SENS] PHAT HIEN XE BAM DUOI! DONG CONG NGAY LAP TUC.");
+        } else {
+          Serial.println(">> [SENS] XE DA QUA HOAN TOAN 3 GIAY! ĐONG CONG.");
+        }
         Serial2.println("CAR_OUT"); // Báo cho IOT_2 biết xe đã an toàn đi qua (để IOT_2 ra lệnh đóng hoặc cập nhật web)
       } else {
         // Nếu cổng bị mở bằng tay (nút/web), phải đợi người dùng đóng bằng tay, bỏ qua việc báo tự động đóng
