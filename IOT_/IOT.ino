@@ -320,7 +320,7 @@ void loop() {
   bool trigger1 = (d1 < 20.0) || (baseline1 - d1 > THRESHOLD);
   
   // Điều kiện: Có xe che (trigger1), hệ thống chưa có xe trong trạm (!carInside) và xe trước đó đã vào quá 5 giây (chống nhiễu nhấp nháy)
-  if (trigger1 && !carInside && (millis() - lastCarInTime > 5000) && (millis() - lastS2ClearTime > 3500)) {
+  if (trigger1 && !carInside && (millis() - lastCarInTime > 5000) && (millis() - lastS2ClearTime > 2000)) {
     carInside = true; 
     lastCarInTime = millis();
     Serial.println(">> [SENS] XE VAO TRAM!");
@@ -348,8 +348,6 @@ void loop() {
     carInside = false;
     Serial.println(">> [SENS] TIMEOUT 10s: Xe khong qua S2, mo khoa cho phep chup lai!");
   }
-
-
   
   if (trigger2 && carInside) {
     // Xe bắt đầu tiến sâu vào và chắn ngang Cảm biến 2 (Đang nằm ngay dưới thanh chắn Barie)
@@ -367,28 +365,22 @@ void loop() {
   else if (!trigger2) {
     firstS2TriggerTime = 0; // Reset bộ đếm debounce S2 khi cảm biến 2 trống
     if (carAtGate) {
-    // TRƯỜNG HỢP: Khoảng cách d2 đã trở về nền bình thường (Cảm biến 2 báo trống, xe vừa thoát khỏi cổng)
-    
-    // THUẬT TOÁN ĐÓNG CỔNG CHỐNG BÁM ĐUÔI: 
-    // Chờ 3 giây, HOẶC nếu phát hiện xe sau đang tiến vào (trigger1) thì đóng cổng ngay lập tức!
-    bool shouldCloseNow = (millis() - lastClearTime > 3000) || trigger1;
-    
-    if (shouldCloseNow) { 
-      carAtGate = false; // Xóa cờ kẹt cổng
-      carInside = false; // Reset toàn bộ chu trình, sẵn sàng đón xe mới
+      // TRƯỜNG HỢP: Cảm biến 2 báo trống (xe đã ra khỏi vùng barie)
+      // BẮT BUỘC: Xe phải đi qua hẳn và Cảm biến 2 phải trống liên tục đủ 3 giây mới được phép đóng cổng
+      bool shouldCloseNow = (millis() - lastClearTime > 3000);
       
-      if (!isManualMode) { // Chỉ thực thi tự động nếu hệ thống không bị khóa bởi mở thủ công
-        if (trigger1) {
-          Serial.println(">> [SENS] PHAT HIEN XE BAM DUOI! DONG CONG NGAY LAP TUC.");
+      if (shouldCloseNow) { 
+        if (!isManualMode) { // Chỉ thực thi tự động nếu hệ thống không bị khóa bởi mở thủ công
+          Serial.println(">> [SENS] XE DA QUA HOAN TOAN 3 GIAY! TIEN HANH DONG CONG.");
+          closeGate(); // Tự động đóng cổng an toàn
+          Serial2.println("CAR_OUT"); // Báo cho IOT_2 biết xe đã an toàn đi qua
         } else {
-          Serial.println(">> [SENS] XE DA QUA HOAN TOAN 3 GIAY! DONG CONG.");
+          // Nếu cổng bị mở bằng tay (nút/web), phải đợi người dùng đóng bằng tay
+          Serial.println(">> [SENS] XE DA QUA, NHUNG DANG MO THU CONG -> KHONG DONG TU DONG!");
         }
-        Serial2.println("CAR_OUT"); // Báo cho IOT_2 biết xe đã an toàn đi qua
-      } else {
-        // Nếu cổng bị mở bằng tay (nút/web), phải đợi người dùng đóng bằng tay
-        Serial.println(">> [SENS] XE DA QUA, NHUNG DANG MO THU CONG -> KHONG DONG TU DONG!");
-      }
-    } // end if(shouldCloseNow)
+        carAtGate = false; // Xóa cờ kẹt cổng
+        carInside = false; // Reset toàn bộ chu trình, sẵn sàng đón xe mới
+      } // end if(shouldCloseNow)
     } // end if(carAtGate)
   } // end else if(!trigger2)
   
