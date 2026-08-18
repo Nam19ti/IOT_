@@ -325,7 +325,12 @@ void loop() {
     carInside = true; // Xác nhận có xe đang đi vào
     lastCarInTime = millis();
     Serial.println(">> [SENS] XE VAO TRAM!");
-    Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2 để xử lý logic (như quẹt thẻ, đếm xe)
+    
+    if (isManualMode) {
+      Serial.println(">> [SENS] BO QUA CHUP ANH (Do dang mo cong thu cong/vinh vien)");
+    } else {
+      Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2 để xử lý logic (chụp ảnh, AI)
+    }
   }
   
   // Phần xử lý đóng cổng với Cảm biến 2
