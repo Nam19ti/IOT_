@@ -522,23 +522,33 @@ def create_app(controller):
                         mongo_uri = controller.config.get("mongo_uri", "").strip()
                         
                         is_known = False
+                        has_enough_balance = False
                         if mongo_uri:
                             try:
                                 client = pymongo.MongoClient(mongo_uri, serverSelectionTimeoutMS=2000)
                                 db = client['iot_thanglong']
                                 clean_plate = re.sub(r'[^A-Z0-9]', '', plate.upper())
                                 for v in db['vehicles'].find():
-                                    if re.sub(r'[^A-Z0-9]', '', str(v.get("plate", "")).upper()) == clean_plate:
+                                    db_plate = re.sub(r'[^A-Z0-9]', '', str(v.get("plate", "")).upper())
+                                    if db_plate == clean_plate:
                                         is_known = True
+                                        balance = v.get("balance", 50000) # Mac dinh 50k neu chua co
+                                        if balance >= 15000:
+                                            has_enough_balance = True
+                                            new_balance = balance - 15000
+                                            db['vehicles'].update_one({"_id": v["_id"]}, {"$set": {"balance": new_balance}})
+                                            p(f"    -> [THU PHÍ]: Trừ 15,000 VND. Số dư mới: {new_balance} VND")
+                                        else:
+                                            p(f"    -> [HẾT TIỀN]: Số dư {balance} VND không đủ 15,000 VND!")
                                         break
                             except Exception as ex_db:
                                 p(f"    -> [DB CHECK ERR]: {ex_db}")
                                 
-                        if is_known:
-                            p(f"    -> [XE QUEN '{plate}']: Gửi lệnh MỞ CỔNG tới ESP32 ({iot2_ip})...")
+                        if is_known and has_enough_balance:
+                            p(f"    -> [XE QUEN '{plate}']: Đã thu phí, gửi lệnh MỞ CỔNG tới ESP32 ({iot2_ip})...")
                             requests.get(f"http://{iot2_ip}/open_gate?plate={plate}", timeout=3)
                         else:
-                            p(f"    -> [XE LẠ/CẢNH BÁO '{plate}']: Gửi lệnh TỪ CHỐI tới ESP32 ({iot2_ip})...")
+                            p(f"    -> [XE LẠ/HẾT TIỀN '{plate}']: Gửi lệnh TỪ CHỐI tới ESP32 ({iot2_ip})...")
                             requests.get(f"http://{iot2_ip}/deny_gate?plate={plate}", timeout=3)
                     except Exception as ex:
                         p(f"    -> [LỖI GỬI ESP32]: {ex}")
