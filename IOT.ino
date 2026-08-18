@@ -312,14 +312,6 @@ void loop() {
     lastS2ClearTime = millis();
   }
 
-  // --- CHỐNG KẸT TRẠNG THÁI (TIMEOUT) ---
-  // Nếu S1 báo có xe (carInside) nhưng 15s sau xe vẫn không tới S2 (carAtGate = false)
-  // -> Khả năng cao xe lùi lại hoặc đang test trên bàn nên quên không quẹt S2. Reset để đón xe khác!
-  if (carInside && !carAtGate && (millis() - lastCarInTime > 15000)) {
-    carInside = false;
-    Serial.println(">> [SENS] TIMEOUT 15s: Xe khong qua cong, huy trang thai cho!");
-  }
-
   // --- Logic xe đi VÀO (Qua Cảm biến 1) ---
   // trigger1 là cờ báo có xe khi khoảng cách nhỏ hơn 20cm, HOẶC sụt giảm > ngưỡng 20cm so với nền
   bool trigger1 = (d1 < 20.0) || (baseline1 - d1 > THRESHOLD);
@@ -333,12 +325,7 @@ void loop() {
     carInside = true; // Xác nhận có xe đang đi vào
     lastCarInTime = millis();
     Serial.println(">> [SENS] XE VAO TRAM!");
-    
-    if (isManualMode) {
-      Serial.println(">> [SENS] BO QUA CHUP ANH (Do dang mo cong thu cong/vinh vien)");
-    } else {
-      Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2 để xử lý logic (chụp ảnh, AI)
-    }
+    Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2 để xử lý logic (như quẹt thẻ, đếm xe)
   }
   
   // Phần xử lý đóng cổng với Cảm biến 2
