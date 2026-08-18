@@ -29,7 +29,8 @@ const float THRESHOLD = 20.0;
 const float SPEED_CONST = 0.017;
 
 bool isGateOpen = false; // Cờ lưu trạng thái hiện tại của cổng (true = đang mở, false = đang đóng)
-bool isManualMode = false; // Cờ phân biệt chế độ đóng mở thủ công bằng nút/web (đòi hỏi đóng thủ công) hay tự động
+bool isManualMode = false;
+bool ignoreNextCar = false; // Bỏ qua chụp ảnh nếu mở thủ công // Cờ phân biệt chế độ đóng mở thủ công bằng nút/web (đòi hỏi đóng thủ công) hay tự động
 bool carInside = false; // Trạng thái xác nhận xe đã bắt đầu đi vào hệ thống (đã qua cảm biến 1)
 bool carAtGate = false; // Trạng thái xe đang nằm ngay dưới thanh chắn barie (đang che cảm biến 2)
 unsigned long lastClearTime = 0; // Lưu thời điểm cuối cùng cảm biến 2 không bị che (dùng cho thuật toán trễ 3s đóng cổng)
@@ -280,6 +281,7 @@ void loop() {
       Serial.println(">> [UART] Nhan lenh MO CONG (Tu Dong Dong)");
       openGate();
       isManualMode = false; // Lệnh mở chuẩn, sẽ tự động đóng khi xe qua cổng
+      if (!carInside) ignoreNextCar = true; // Web UI mở cổng trước khi xe vào -> Bỏ qua chụp ảnh
     } else if (msg == "OPEN_MANUAL") {
       Serial.println(">> [UART] Nhan lenh MO CONG (Khong Tu Dong Dong)");
       openGate();
@@ -333,11 +335,16 @@ void loop() {
   // 4. Cổng đang ĐÓNG (!isGateOpen) - Tránh chụp ảnh khi cổng đã được mở sẵn
   // 5. Xe trước đó đã vào quá 5 giây (chống nhiễu nhấp nháy)
   // 6. Cảm biến 2 đã hoàn toàn TRỐNG trải ít nhất 3.3 giây (Chống chụp ảnh khi xe trước chưa qua hẳn)
-  if (trigger1 && !carInside && !isManualMode && !isGateOpen && (millis() - lastCarInTime > 5000) && (millis() - lastS2ClearTime > 3300)) {
+  if (trigger1 && !carInside && !isManualMode && (millis() - lastCarInTime > 5000) && (millis() - lastS2ClearTime > 3300)) {
     carInside = true; // Xác nhận có xe đang đi vào
     lastCarInTime = millis();
     Serial.println(">> [SENS] XE VAO TRAM!");
-    Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2 để xử lý logic (như quẹt thẻ, đếm xe)
+    if (ignoreNextCar) {
+      Serial.println(">> [SENS] Bo qua chup anh (Do mo thu cong tu Web)");
+      ignoreNextCar = false;
+    } else {
+      Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2
+    }
   }
   
   // Phần xử lý đóng cổng với Cảm biến 2
