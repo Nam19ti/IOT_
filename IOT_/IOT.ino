@@ -34,6 +34,7 @@ bool carInside = false; // Trạng thái xác nhận xe đã bắt đầu đi v�
 bool carAtGate = false; // Trạng thái xe đang nằm ngay dưới thanh chắn barie
 bool isProcessing = false; // Cờ báo hiệu Server đang xử lý ảnh (chưa có kết quả) (đang che cảm biến 2)
 unsigned long lastClearTime = 0; // Lưu thời điểm cuối cùng cảm biến 2 không bị che (dùng cho thuật toán trễ 3s đóng cổng)
+unsigned long firstS2TriggerTime = 0; // Lưu thời điểm đầu tiên S2 bắt đầu bị che - dùng để debounce tránh nhiễu nhất thời
 
 // Các biến phục vụ thuật toán chống dội (debounce) cho nút bấm
 volatile bool buttonPressed = false; // Cờ báo hiệu có người vừa nhấn nút (volatile vì dùng trong ngắt)
@@ -349,19 +350,23 @@ void loop() {
   }
 
 
-
-
   
   if (trigger2 && carInside) {
     // Xe bắt đầu tiến sâu vào và chắn ngang Cảm biến 2 (Đang nằm ngay dưới thanh chắn Barie)
-    if (!carAtGate) {
+    if (firstS2TriggerTime == 0) {
+      firstS2TriggerTime = millis(); // Ghi nhận lần đầu tiên S2 bị kích hoạt
+    }
+    // DEBOUNCE: Chỉ công nhận có xe tại S2 nếu S2 bị che LIÊN TỤC ít nhất 800ms (loại nhiễu tức thời)
+    if (!carAtGate && (millis() - firstS2TriggerTime >= 800)) {
       carAtGate = true; // Bật cờ cảnh báo xe đang kẹt dưới cổng (rất quan trọng để khóa lệnh đóng cổng)
       Serial.println(">> [SENS] XE DANG NAM DUOI CONG...");
     }
     // LƯU Ý THUẬT TOÁN: Chừng nào xe vẫn đang che cảm biến 2, ta liên tục reset đồng hồ lastClearTime về hiện tại!
     lastClearTime = millis();
   } 
-  else if (!trigger2 && carAtGate) {
+  else if (!trigger2) {
+    firstS2TriggerTime = 0; // Reset bộ đếm debounce S2 khi cảm biến 2 trống
+    if (carAtGate) {
     // TRƯỜNG HỢP: Khoảng cách d2 đã trở về nền bình thường (Cảm biến 2 báo trống, xe vừa thoát khỏi cổng)
     
     // THUẬT TOÁN ĐÓNG CỔNG CHỐNG BÁM ĐUÔI: 
@@ -376,15 +381,16 @@ void loop() {
         if (trigger1) {
           Serial.println(">> [SENS] PHAT HIEN XE BAM DUOI! DONG CONG NGAY LAP TUC.");
         } else {
-          Serial.println(">> [SENS] XE DA QUA HOAN TOAN 3 GIAY! ĐONG CONG.");
+          Serial.println(">> [SENS] XE DA QUA HOAN TOAN 3 GIAY! DONG CONG.");
         }
-        Serial2.println("CAR_OUT"); // Báo cho IOT_2 biết xe đã an toàn đi qua (để IOT_2 ra lệnh đóng hoặc cập nhật web)
+        Serial2.println("CAR_OUT"); // Báo cho IOT_2 biết xe đã an toàn đi qua
       } else {
-        // Nếu cổng bị mở bằng tay (nút/web), phải đợi người dùng đóng bằng tay, bỏ qua việc báo tự động đóng
+        // Nếu cổng bị mở bằng tay (nút/web), phải đợi người dùng đóng bằng tay
         Serial.println(">> [SENS] XE DA QUA, NHUNG DANG MO THU CONG -> KHONG DONG TU DONG!");
       }
-    }
-  }
+    } // end if(shouldCloseNow)
+    } // end if(carAtGate)
+  } // end else if(!trigger2)
   
   delay(50); // Trễ một chút trong vòng lặp chính để giảm tải cho vi điều khiển ESP32
 }
