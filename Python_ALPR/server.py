@@ -536,9 +536,11 @@ def create_app(controller):
                                 
                         if is_known:
                             p(f"    -> [XE QUEN '{plate}']: Gửi lệnh MỞ CỔNG tới ESP32 ({iot2_ip})...")
+                            controller.last_violation["status"] = "Đã Thu Phí"
                             requests.get(f"http://{iot2_ip}/open_gate?plate={plate}", timeout=3)
                         else:
                             p(f"    -> [XE LẠ/CẢNH BÁO '{plate}']: Gửi lệnh TỪ CHỐI tới ESP32 ({iot2_ip})...")
+                            controller.last_violation["status"] = "Hết Tiền/Khách Lạ"
                             requests.get(f"http://{iot2_ip}/deny_gate?plate={plate}", timeout=3)
                     except Exception as ex:
                         p(f"    -> [LỖI GỬI ESP32]: {ex}")
