@@ -29,8 +29,7 @@ const float THRESHOLD = 20.0;
 const float SPEED_CONST = 0.017;
 
 bool isGateOpen = false; // Cờ lưu trạng thái hiện tại của cổng (true = đang mở, false = đang đóng)
-bool isManualMode = false;
-bool ignoreNextCar = false; // Cờ chặn chụp ảnh nếu có lệnh mở từ Web // Cờ phân biệt chế độ đóng mở thủ công bằng nút/web (đòi hỏi đóng thủ công) hay tự động
+bool isManualMode = false; // Cờ phân biệt chế độ đóng mở thủ công bằng nút/web (đòi hỏi đóng thủ công) hay tự động
 bool carInside = false; // Trạng thái xác nhận xe đã bắt đầu đi vào hệ thống (đã qua cảm biến 1)
 bool carAtGate = false; // Trạng thái xe đang nằm ngay dưới thanh chắn barie (đang che cảm biến 2)
 unsigned long lastClearTime = 0; // Lưu thời điểm cuối cùng cảm biến 2 không bị che (dùng cho thuật toán trễ 3s đóng cổng)
@@ -114,20 +113,18 @@ void openGate() {
  */
 bool isCarUnderGate() {
   float min_d = 999.0;
-  for (int i = 0; i < 3; i++) { 
+  int lost_ground = 0; // Bộ đếm số lần đo bị mất sóng nền
+  for (int i = 0; i < 3; i++) { // Quét liên tiếp 3 lần
     float d2 = getDistance(trigPin2, echoPin2);
-    if (d2 < min_d) min_d = d2; 
-    delay(15); 
+    if (d2 < min_d) min_d = d2; // Lấy khoảng cách ngắn nhất trong 3 lần
+    if (d2 >= 990.0) lost_ground++; // Nếu >= 990.0 tức là bị timeout do sóng bị hắt đi mất
+    delay(15); // Nghỉ 15ms giữa các lần đo
   }
+  // Nếu cả 3 lần đo đều bị timeout (mất sóng nền do kính xe hắt đi), thì chắc chắn có vật cản che khuất
+  if (lost_ground == 3) return true;
   
-  // NẾU KHOẢNG CÁCH >= 990 TỨC LÀ KHÔNG CÓ VẬT CẢN (Sóng bay thẳng lên trời / không có phản xạ)
-  // Fix lỗi test trên bàn: Hủy bỏ logic lost_ground == 3 để tránh báo giả khi cầm cảm biến chĩa vào khoảng không.
-  if (min_d >= 990.0) return false;
-  
-  // Chỉ báo có xe nếu khoảng cách cực nhỏ (< 20cm) 
-  // HOẶC nhỏ hơn khoảng cách nền (nhưng phải nhỏ hơn 1 khoảng an toàn để tránh nhiễu do cầm tay vung vẩy)
-  // Nới lỏng THRESHOLD x2 để test trên bàn không bị nhạy quá.
-  return (min_d < 20.0) || (baseline2 - min_d > (THRESHOLD * 2));
+  // Trả về true (có xe) nếu khoảng cách nhỏ (<20) hoặc giảm đột ngột quá ngưỡng (THRESHOLD) so với nền
+  return (min_d < 20.0) || (baseline2 - min_d > THRESHOLD);
 }
 
 /*
@@ -278,20 +275,17 @@ void loop() {
     msg.trim(); // Cắt bỏ các ký tự trống, xuống dòng
     
     if (msg == "OPEN") {
-      Serial.println(">> [UART] Nhan lenh MO CONG (Tu Dong Dong tu Web)");
+      Serial.println(">> [UART] Nhan lenh MO CONG (Tu Dong Dong)");
       openGate();
-      isManualMode = false;
-      if (!carInside) ignoreNextCar = true; // Chặn chụp ảnh chiếc xe tiếp theo
+      isManualMode = false; // Lệnh mở chuẩn, sẽ tự động đóng khi xe qua cổng
     } else if (msg == "OPEN_MANUAL") {
-      Serial.println(">> [UART] Nhan lenh MO CONG VINH VIEN (Web)");
+      Serial.println(">> [UART] Nhan lenh MO CONG (Khong Tu Dong Dong)");
       openGate();
-      isManualMode = true;
-      ignoreNextCar = true;
+      isManualMode = true; // Lệnh mở thủ công từ xa (VD: Bảo vệ bấm trên app web), cấm tự động đóng
     } else if (msg == "CLOSE") {
       Serial.println(">> [UART] Nhan lenh DONG CONG");
       closeGate();
-      isManualMode = false;
-      ignoreNextCar = false;
+      isManualMode = false; // Reset lại chế độ tự động bình thường
     }
   }
 
@@ -318,14 +312,6 @@ void loop() {
     lastS2ClearTime = millis();
   }
 
-  // --- CHỐNG KẸT TRẠNG THÁI (TIMEOUT) ---
-  // Nếu S1 báo có xe (carInside) nhưng 15s sau xe vẫn không tới S2 (carAtGate = false)
-  // -> Khả năng cao xe lùi lại hoặc người đi bộ. Reset để đón xe khác!
-  if (carInside && !carAtGate && (millis() - lastCarInTime > 15000)) {
-    carInside = false;
-    Serial.println(">> [SENS] TIMEOUT 15s: Xe khong qua cong, huy trang thai cho!");
-  }
-
   // --- Logic xe đi VÀO (Qua Cảm biến 1) ---
   // trigger1 là cờ báo có xe khi khoảng cách nhỏ hơn 20cm, HOẶC sụt giảm > ngưỡng 20cm so với nền
   bool trigger1 = (d1 < 20.0) || (baseline1 - d1 > THRESHOLD);
@@ -339,13 +325,7 @@ void loop() {
     carInside = true; // Xác nhận có xe đang đi vào
     lastCarInTime = millis();
     Serial.println(">> [SENS] XE VAO TRAM!");
-    
-    if (ignoreNextCar || isManualMode) {
-      Serial.println(">> [SENS] BO QUA CHUP ANH (Do mo cong tu Web)");
-      ignoreNextCar = false; // Đã bỏ qua xong, reset cờ cho các xe sau
-    } else {
-      Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2 để chụp ảnh
-    }
+    Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2 để xử lý logic (như quẹt thẻ, đếm xe)
   }
   
   // Phần xử lý đóng cổng với Cảm biến 2
