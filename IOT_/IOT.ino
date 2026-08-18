@@ -56,6 +56,7 @@ void IRAM_ATTR handleButtonInterrupt() {
 // Các biến ghi nhận thời gian xe ra/vào để tránh dội tín hiệu cảm biến
 unsigned long lastCarInTime = 0;
 unsigned long lastCarOutTime = 0;
+unsigned long lastS2ClearTime = 0; // Thoi diem cuoi cung S2 ranh
 
 // Biến lưu thời gian gửi báo cáo khoảng cách qua Serial/UART định kỳ
 unsigned long lastDistanceReport = 0;
@@ -306,15 +307,31 @@ void loop() {
   bool trigger1 = (d1 < 20.0) || (baseline1 - d1 > THRESHOLD);
   
   // Điều kiện: Có xe che (trigger1), hệ thống chưa có xe trong trạm (!carInside) và xe trước đó đã vào quá 5 giây (chống nhiễu nhấp nháy)
-  if (trigger1 && !carInside && millis() - lastCarInTime > 5000) {
-    carInside = true; // Xác nhận có xe đang đi vào
+  if (trigger1 && !carInside && (millis() - lastCarInTime > 5000) && (millis() - lastS2ClearTime > 3500)) {
+    carInside = true; 
     lastCarInTime = millis();
     Serial.println(">> [SENS] XE VAO TRAM!");
-    Serial2.println("CAR_IN"); // Báo qua UART cho IOT_2 để xử lý logic (như quẹt thẻ, đếm xe)
+    
+    if (isManualMode) {
+      Serial.println(">> [SENS] BO QUA CHUP ANH (Do dang mo cong thu cong/vinh vien)");
+    } else {
+      Serial2.println("CAR_IN"); // Bao qua UART cho IOT_2
+    }
   }
   
   // --- Logic xe đi RA / NẰM DƯỚI CỔNG (Qua Cảm biến 2) ---
   bool trigger2 = (d2 < 20.0) || (baseline2 - d2 > THRESHOLD);
+
+  // Cập nhật liên tục mốc thời gian nếu S2 đang có xe
+  if (trigger2) {
+    lastS2ClearTime = millis();
+  }
+
+  // --- CHỐNG KẸT TRẠNG THÁI (TIMEOUT) ---
+  if (carInside && !carAtGate && (millis() - lastCarInTime > 15000)) {
+    carInside = false;
+    Serial.println(">> [SENS] TIMEOUT 15s: Xe khong qua cong, huy trang thai cho!");
+  }
   
   if (trigger2 && carInside) {
     // Xe bắt đầu tiến sâu vào và chắn ngang Cảm biến 2 (Đang nằm ngay dưới thanh chắn Barie)
