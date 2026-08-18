@@ -152,6 +152,8 @@ void closeGate() {
     delay(100);
     beepBuzzer();       // Kêu bíp thứ 2 báo hiệu cổng đã hạ
     isGateOpen = false; // Cập nhật trạng thái
+    carInside = false;  // Reset tuyệt đối chu trình cảm biến
+    carAtGate = false;
     Serial2.println("STATE:CLOSED"); // Báo trạng thái cho IOT_2
   }
 }
@@ -310,6 +312,14 @@ void loop() {
   // Cập nhật liên tục mốc thời gian nếu S2 đang có xe
   if (trigger2) {
     lastS2ClearTime = millis();
+  }
+
+  // --- CHỐNG KẸT TRẠNG THÁI (TIMEOUT) ---
+  // Nếu S1 báo có xe (carInside = true) nhưng sau 15s xe vẫn không tới S2 (carAtGate = false)
+  // -> Khả năng cao xe đã lùi lại do AI từ chối, hoặc ai đó đi ngang qua. Phải reset để đón xe khác!
+  if (carInside && !carAtGate && (millis() - lastCarInTime > 15000)) {
+    carInside = false;
+    Serial.println(">> [SENS] TIMEOUT 15s: Xe khong qua cong, huy trang thai cho!");
   }
 
   // --- Logic xe đi VÀO (Qua Cảm biến 1) ---
