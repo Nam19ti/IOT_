@@ -106,6 +106,18 @@ class SyncManager:
 
             # Lấy bản ghi cũ nhất (ở dòng trên cùng của danh sách) để xử lý trước (FIFO)
             row = rows[0]
+            if len(row) < 5:
+                # Bỏ qua dòng bị lỗi định dạng (ví dụ dòng trắng cuối file)
+                rows.pop(0)
+                try:
+                    with open(self.csv_file, mode='w', newline='', encoding='utf-8') as f:
+                        writer = csv.writer(f)
+                        if header:
+                            writer.writerow(header)
+                        writer.writerows(rows)
+                except: pass
+                continue
+                
             timestamp, plate, speed, direction, img_path = row
             
             p(f"[SYNC] Đang xử lý đồng bộ cho biển số: {plate}")
