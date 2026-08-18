@@ -174,7 +174,24 @@ sequenceDiagram
 + Bước 5: Đóng cổng An toàn (Safe Closing)
   - Xe tiến vào sân đỗ, quét qua Cảm biến siêu âm 2. Lúc này thuật toán Zero-Crash của Mạch 1 bắt đầu làm việc. Mạch 1 liên tục giám sát Cảm biến 2, chỉ khi nào đuôi xe đã hoàn toàn đi qua (Cảm biến 2 đo được khoảng cách xa trở lại), mạch mới đếm ngược 3 giây để từ từ hạ cần Barie xuống, kết thúc một vòng tuần hoàn hoàn mỹ.
 
-## 6. Cấu trúc mã nguồn và Tệp tin (Source Code Architecture)
+## 6. Các cơ chế Cốt lõi của Hệ thống (Core System Mechanisms)
+
+### 6.1. Tính năng của Web Dashboard (Web UI Features)
++ **Giao diện giám sát thời gian thực:** Ứng dụng Flask cung cấp trang Bảng điều khiển (Dashboard) trực quan, cho phép nhân viên bảo vệ hoặc quản trị viên theo dõi ngay lập tức các sự kiện xe ra/vào trên màn hình máy tính bảng hoặc laptop.
++ **Điều khiển cổng khẩn cấp từ xa:** Tích hợp các nút bấm cứng gọi API thẳng xuống mạch ESP32 bao gồm `Mở Khẩn Cấp` (Mở thủ công, không tự động đóng) và `Đóng Khẩn Cấp`. Tính năng này cho phép bảo vệ can thiệp linh hoạt khi có xe ưu tiên (cấp cứu, cứu hỏa) hoặc khi AI không thể nhận diện do biển số bị bùn đất che lấp hoàn toàn.
++ **Quản lý Lịch sử thông minh:** Bảng lịch sử ra/vào tự động truy xuất dữ liệu từ CSDL MongoDB, tự động phân trang (Pagination), và đính kèm hình ảnh Snapshot gốc của từng lượt xe để dễ dàng đối chiếu khi xảy ra tranh chấp.
+
+### 6.2. Cơ chế lấy mẫu ảnh và Nhận diện OCR đám mây
++ **Lấy mẫu ảnh tĩnh siêu tốc (Snapshot):** Nhận thấy việc truyền luồng Video (Live Stream) từ điện thoại về máy chủ liên tục sẽ gây tắc nghẽn cục bộ băng thông mạng LAN, dự án áp dụng phương pháp lấy mẫu tĩnh. Sử dụng thư viện `urllib` của Python gửi một gói tin HTTP GET "thô" không chứa Header tới IP Webcam. Điện thoại lập tức nhả 1 khung hình JPEG ngay tại khoảnh khắc có xe với độ trễ gần như bằng không (<0.1s).
++ **Tiền xử lý ma trận ảnh:** Dữ liệu JPEG truyền về dưới dạng luồng byte sẽ được giải nén qua `numpy` và `cv2` (OpenCV) thành ma trận điểm ảnh đa chiều. Việc này cho phép cắt xén (Crop) vùng quan tâm hoặc nén kích thước ảnh trước khi tải lên mạng, giúp tối ưu dung lượng Internet.
++ **Phân tích OCR đám mây bằng Regex:** Hình ảnh được mã hóa và gửi lên Google Gemini API cùng một bộ Lời nhắc (Prompt) nghiêm ngặt. Do các mô hình Ngôn ngữ Lớn (LLM) thường có xu hướng "nói rườm rà", Server Python đã được trang bị một bộ lọc Biểu thức chính quy (Regular Expression - Regex) để cạo bỏ toàn bộ các câu chữ thừa, bóc tách chính xác tuyệt đối chuỗi JSON chứa giá trị "Biển số xe" trả về.
+
+### 6.3. Cơ chế chịu lỗi khi Mất kết nối (Offline Fault Tolerance)
++ **Mất kết nối WiFi cục bộ (Auto-Reconnect):** Mạch ESP Gateway (Mạch 2) được lập trình tính năng tự động phát hiện rớt mạng. Thay vì treo cứng chờ đợi, nó sẽ kích hoạt bộ đếm thời gian (Timer), hiển thị cảnh báo `MAT MANG WIFI` lên màn hình LCD, và ngầm thực hiện tiến trình thử kết nối lại (Retry) mỗi 5 giây ở vòng lặp nền.
++ **Lỗi Máy chủ hoặc Hỏng Camera:** Khi mạng LAN vẫn có nhưng Server Python bị sập hoặc Camera điện thoại hết pin, lệnh HTTP GET gọi sang Server sẽ bị Timeout. Thư viện HTTPClient trên ESP32 và khối `try-except` trên Python sẽ tự động bắt ngoại lệ (Exception Catching), không để chương trình bị Crash. Màn hình LCD lúc này sẽ chuyển sang báo lỗi `Khong thay Server`.
++ **Đảm bảo an toàn Phần cứng Tuyệt đối:** Nhờ kiến trúc Phân tán (Decentralization), khi toàn bộ hệ thống mạng và Web sập hoàn toàn, **Mạch ESP Master (Mạch 1 - Cơ điện) vẫn hoạt động độc lập 100%**. Tính năng bấm nút cơ học để mở cổng và thuật toán sóng âm chống kẹt (Zero-Crash) dưới barie vẫn chạy hoàn hảo mượt mà, giúp bãi xe không bao giờ bị tê liệt vật lý.
+
+## 7. Cấu trúc mã nguồn và Tệp tin (Source Code Architecture)
 Dự án được tổ chức theo cấu trúc Module hóa (Modular Design), tách biệt hoàn toàn giữa C/C++ (Dành cho Vi điều khiển) và Python (Dành cho Máy chủ):
 
 ```text
@@ -199,10 +216,10 @@ IOT_ThangLong/
 + Phân tích mã nguồn Nhóm C/C++: Hai tệp `.ino` được thiết kế tối giản, loại bỏ hoàn toàn các vòng lặp `delay()` thừa thãi. Hệ thống sử dụng thuật toán ngắt phần cứng (Hardware Interrupts) và bộ đếm thời gian thực `millis()` để đảm bảo Mạch ESP32 không bao giờ bị nghẽn lệnh.
 + Phân tích mã nguồn Nhóm Python: Việc chia nhỏ mã nguồn thành từng Module (`ai.py`, `camera.py`, `db.py`) tuân thủ nghiêm ngặt nguyên lý Single Responsibility Principle (SRP) trong thiết kế phần mềm, giúp quá trình bảo trì, gỡ lỗi và nâng cấp tính năng mới trở nên vô cùng dễ dàng.
 
-## 7. Danh sách Thư viện và Tập lệnh (Libraries & Core Functions Tree)
+## 8. Danh sách Thư viện và Tập lệnh (Libraries & Core Functions Tree)
 Để tiện cho việc tra cứu và phát triển kế thừa, dưới đây là thống kê toàn bộ Thư viện (Dependencies) và các Hàm cốt lõi (Core Functions) chia theo luồng thực thi:
 
-### 7.1. Khối Phần cứng nhúng (Embedded Hardware)
+### 8.1. Khối Phần cứng nhúng (Embedded Hardware)
 + Module ESP32 Master (`IOT.ino`)
   - [Thư viện] `ESP32Servo`: Thay thế thư viện Servo truyền thống, cung cấp xung PWM chính xác hơn để điều khiển Barie đóng mở góc 90 độ mượt mà, không bị giật cục.
   - [Hàm] `measureDistance()`: Phát một xung `TRIG` siêu ngắn (10 micro-giây) và đo thời gian vọng lại của chân `ECHO` để quy đổi ra khoảng cách (đơn vị: cm).
@@ -216,7 +233,7 @@ IOT_ThangLong/
   - [Thư viện] `LiquidCrystal_I2C`: Điều khiển màn hình LCD hiển thị trạng thái IP mạng thông qua bus I2C (SDA/SCL).
   - [Hàm] `handleOpenGate()`: Hàm Endpoint. Khi máy chủ Python gọi tới đường dẫn API `/open_gate`, hàm này sẽ lập tức truyền cờ lệnh (Flag) qua UART để "kêu gọi" Mạch 1 mở cổng.
 
-### 7.2. Khối Máy chủ Backend (Python Flask Server)
+### 8.2. Khối Máy chủ Backend (Python Flask Server)
 + Module Điều phối Trung tâm (`server.py`)
   - [Thư viện] `flask`: Micro-framework dựng máy chủ Web siêu nhẹ.
   - [Hàm] `capture_only()`: Hàm Route chính. Liên kết chuỗi sự kiện: Mạch 2 báo tín hiệu -> Gọi `camera.py` lấy ảnh -> Gọi `ai.py` nhận diện -> Gọi `db.py` lưu trữ -> Phản hồi lệnh HTTP xuống Mạch 2 mở cổng.
@@ -237,7 +254,7 @@ IOT_ThangLong/
   - [Hàm] `init_db()`: Khởi tạo kết nối tới MongoDB Client, định nghĩa tên Database (`parking_db`) và Collection (`history_log`).
   - [Hàm] `add_record()` / `get_history()`: Thực thi các lệnh truy vấn NoSQL (`insert_one`, `find`) để đẩy mảng dữ liệu (Dict) lịch sử mới và xuất truy vấn mảng báo cáo trả về cho Web UI.
 
-## 8. Kết quả đạt được của dự án (Current Achievements)
+## 9. Kết quả đạt được của dự án (Current Achievements)
 Tính đến thời điểm hiện tại, dự án đã hoàn thành và nghiệm thu thành công các hạng mục cốt lõi, bao phủ từ phần cứng tới phần mềm:
 
 + Về mặt Vi mạch Phần cứng (Hardware & Electronics)
