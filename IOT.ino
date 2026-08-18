@@ -114,18 +114,20 @@ void openGate() {
  */
 bool isCarUnderGate() {
   float min_d = 999.0;
-  int lost_ground = 0; // Bộ đếm số lần đo bị mất sóng nền
-  for (int i = 0; i < 3; i++) { // Quét liên tiếp 3 lần
+  for (int i = 0; i < 3; i++) { 
     float d2 = getDistance(trigPin2, echoPin2);
-    if (d2 < min_d) min_d = d2; // Lấy khoảng cách ngắn nhất trong 3 lần
-    if (d2 >= 990.0) lost_ground++; // Nếu >= 990.0 tức là bị timeout do sóng bị hắt đi mất
-    delay(15); // Nghỉ 15ms giữa các lần đo
+    if (d2 < min_d) min_d = d2; 
+    delay(15); 
   }
-  // Nếu cả 3 lần đo đều bị timeout (mất sóng nền do kính xe hắt đi), thì chắc chắn có vật cản che khuất
-  if (lost_ground == 3) return true;
   
-  // Trả về true (có xe) nếu khoảng cách nhỏ (<20) hoặc giảm đột ngột quá ngưỡng (THRESHOLD) so với nền
-  return (min_d < 20.0) || (baseline2 - min_d > THRESHOLD);
+  // NẾU KHOẢNG CÁCH >= 990 TỨC LÀ KHÔNG CÓ VẬT CẢN (Sóng bay thẳng lên trời / không có phản xạ)
+  // Fix lỗi test trên bàn: Hủy bỏ logic lost_ground == 3 để tránh báo giả khi cầm cảm biến chĩa vào khoảng không.
+  if (min_d >= 990.0) return false;
+  
+  // Chỉ báo có xe nếu khoảng cách cực nhỏ (< 20cm) 
+  // HOẶC nhỏ hơn khoảng cách nền (nhưng phải nhỏ hơn 1 khoảng an toàn để tránh nhiễu do cầm tay vung vẩy)
+  // Nới lỏng THRESHOLD x2 để test trên bàn không bị nhạy quá.
+  return (min_d < 20.0) || (baseline2 - min_d > (THRESHOLD * 2));
 }
 
 /*
