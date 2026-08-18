@@ -327,6 +327,15 @@ void loop() {
     lastS2ClearTime = millis();
   }
 
+  // --- CHỐNG KẸT TRẠNG THÁI (TIMEOUT 10s) ---
+  // Nếu S1 báo có xe (carInside) nhưng 10s sau xe vẫn chưa tới S2 (carAtGate = false)
+  // -> Hủy trạng thái chờ để S1 có thể chụp ảnh chiếc xe tiếp theo.
+  if (carInside && !carAtGate && (millis() - lastCarInTime > 10000)) {
+    carInside = false;
+    Serial.println(">> [SENS] TIMEOUT 10s: Xe khong qua cong, reset de chup anh xe sau!");
+  }
+
+
   
   if (trigger2 && carInside) {
     // Xe bắt đầu tiến sâu vào và chắn ngang Cảm biến 2 (Đang nằm ngay dưới thanh chắn Barie)
