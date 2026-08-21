@@ -1,4 +1,4 @@
-# DỰ ÁN: HỆ THỐNG NHẬN DIỆN BIỂN SỐ VÀ QUẢN LÝ BÃI ĐỖ XE TỰ ĐỘNG (ALPR SMART PARKING)
+# DỰ ÁN: HỆ THỐNG TRẠM THU PHÍ TỰ ĐỘNG (ALPR SMART PARKING)
 
 ## 1. Vấn đề của dự án (Problem Statement)
 + Thực trạng hiện nay: Tại các khu dân cư, cơ quan hay trạm thu phí truyền thống, việc kiểm soát xe ra vào vẫn chủ yếu dựa vào sức người (bảo vệ ghi vé giấy, quẹt thẻ thủ công). Phương pháp này bộc lộ nhiều hạn chế như: tốn kém chi phí thuê nhân sự trực 24/24, dễ xảy ra sai sót hoặc gian lận, làm mất vé xe, và đặc biệt là gây ùn tắc giao thông cục bộ tại khu vực cổng vào những khung giờ cao điểm (giờ đi làm, giờ tan tầm).
